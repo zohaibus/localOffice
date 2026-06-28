@@ -4,9 +4,9 @@ Single-file, local-first office tools: fully offline, zero dependencies, built o
 one rule: **AI advises, deterministic math decides.**
 
 <p align="center">
-  <a href="https://USERNAME.github.io/REPO/LocalOffice.html"><img src="https://github.com/user-attachments/assets/373d110c-cdf6-454f-96c1-0a61252394ef" alt="LocalOffice Hub demo (animated)" width="860"></a>
+  <a href="https://zohaibus.github.io/localOffice/LocalOffice.html"><img src="https://github.com/user-attachments/assets/373d110c-cdf6-454f-96c1-0a61252394ef" alt="LocalOffice Hub demo (animated)" width="860"></a>
 </p>
-<p align="center"><a href="https://USERNAME.github.io/REPO/LocalOffice.html"><b>▶ Open the Hub</b></a></p>
+<p align="center"><a href="https://zohaibus.github.io/localOffice/LocalOffice.html"><b>▶ Open the Hub</b></a></p>
 
 A family of tools that all read and write one JSON format (`localoffice/v1`); the
 shared core is built once, and each tool is a thin layer on top. Every tool has a
