@@ -357,7 +357,7 @@ numbers describe a *power class*, not a brand.
 
 Measured there with [`verify-perf.js`](verify-perf.js) (`node verify-perf.js`):
 
-- **770 KB for the entire 9-file suite, 0 dependencies, 0 build step.** No
+- **~850 KB for the entire 9-file suite, 0 dependencies, 0 build step.** No
   framework, no DOM-diffing runtime, no bundler. The source *is* the app.
 - **Cold start (parse to interactive) of about 20 to 300 ms** for eight of the
   nine tools on that CPU; the spreadsheet/formula engine, the heavy one, takes
