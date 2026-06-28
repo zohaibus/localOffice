@@ -10,9 +10,9 @@
 No accounts. No cloud. No subscription. No analytics. No tracking. One HTML file.
 
 <p align="center">
-  <a href="https://USERNAME.github.io/REPO/localSheets/localsheets.html"><img src="https://github.com/user-attachments/assets/a938dcfe-094d-4b10-8b02-d8ff9c577a45" alt="LocalSheets demo (animated)" width="820"></a>
+  <a href="https://zohaibus.github.io/localOffice/localSheets/localsheets.html"><img src="https://github.com/user-attachments/assets/a938dcfe-094d-4b10-8b02-d8ff9c577a45" alt="LocalSheets demo (animated)" width="820"></a>
 </p>
-<p align="center"><a href="https://USERNAME.github.io/REPO/localSheets/localsheets.html"><b>▶ Open LocalSheets</b></a></p>
+<p align="center"><a href="https://zohaibus.github.io/localOffice/localSheets/localsheets.html"><b>▶ Open LocalSheets</b></a></p>
 
 Part of [**LocalOffice**](../README.md), a family of single-file, local-first
 tools that share one JSON format (`localoffice/v1`). Your data stays in a plain
