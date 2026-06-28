@@ -1,0 +1,244 @@
+{
+  "format": "localoffice/v1",
+  "type": "sheet",
+  "meta": {
+    "id": "tpl-unit-pack",
+    "title": "Unit & physics pack",
+    "created": "2026-06-14T00:00:00.000Z",
+    "modified": "2026-06-14T00:00:00.000Z",
+    "app": "localsheets@1.2",
+    "tags": [
+      "template",
+      "units"
+    ]
+  },
+  "body": {
+    "sheets": [
+      {
+        "name": "Units",
+        "frozen": {
+          "rows": 0,
+          "cols": 0
+        },
+        "cells": {
+          "A1": {
+            "v": "Unit & physics pack",
+            "format": {
+              "bold": true
+            }
+          },
+          "A2": {
+            "v": "Generic textbook conversions and formulas.",
+            "format": {
+              "italic": true
+            }
+          },
+          "A4": {
+            "v": "Temperature",
+            "format": {
+              "bold": true
+            }
+          },
+          "A5": {
+            "v": "Celsius"
+          },
+          "B5": {
+            "v": "100"
+          },
+          "C5": {
+            "v": "-> Fahrenheit"
+          },
+          "D5": {
+            "f": "=B5*9/5+32",
+            "format": {
+              "numfmt": "number"
+            }
+          },
+          "A6": {
+            "v": "Fahrenheit"
+          },
+          "B6": {
+            "v": "98.6"
+          },
+          "C6": {
+            "v": "-> Celsius"
+          },
+          "D6": {
+            "f": "=(B6-32)*5/9",
+            "format": {
+              "numfmt": "number"
+            }
+          },
+          "A8": {
+            "v": "Length & mass",
+            "format": {
+              "bold": true
+            }
+          },
+          "A9": {
+            "v": "Kilometres"
+          },
+          "B9": {
+            "v": "10"
+          },
+          "C9": {
+            "v": "-> miles"
+          },
+          "D9": {
+            "f": "=B9*0.621371",
+            "format": {
+              "numfmt": "number"
+            }
+          },
+          "A10": {
+            "v": "Kilograms"
+          },
+          "B10": {
+            "v": "5"
+          },
+          "C10": {
+            "v": "-> pounds"
+          },
+          "D10": {
+            "f": "=B10*2.20462",
+            "format": {
+              "numfmt": "number"
+            }
+          },
+          "A12": {
+            "v": "Motion",
+            "format": {
+              "bold": true
+            }
+          },
+          "A13": {
+            "v": "Speed (m/s)"
+          },
+          "B13": {
+            "v": "10"
+          },
+          "C13": {
+            "v": "-> km/h"
+          },
+          "D13": {
+            "f": "=B13*3.6",
+            "format": {
+              "numfmt": "number"
+            }
+          },
+          "A14": {
+            "v": "Acceleration (m/s^2)"
+          },
+          "B14": {
+            "v": "9.8"
+          },
+          "A15": {
+            "v": "Time (s)"
+          },
+          "B15": {
+            "v": "3"
+          },
+          "A16": {
+            "v": "Free-fall distance (m)"
+          },
+          "B16": {
+            "f": "=0.5*B14*B15*B15",
+            "format": {
+              "numfmt": "number"
+            }
+          },
+          "A18": {
+            "v": "Geometry",
+            "format": {
+              "bold": true
+            }
+          },
+          "A19": {
+            "v": "Radius"
+          },
+          "B19": {
+            "v": "5"
+          },
+          "A20": {
+            "v": "Circle area"
+          },
+          "B20": {
+            "f": "=PI()*B19*B19",
+            "format": {
+              "numfmt": "number"
+            }
+          },
+          "A21": {
+            "v": "Circumference"
+          },
+          "B21": {
+            "f": "=2*PI()*B19",
+            "format": {
+              "numfmt": "number"
+            }
+          },
+          "A23": {
+            "v": "Compound interest",
+            "format": {
+              "bold": true
+            }
+          },
+          "A24": {
+            "v": "Principal"
+          },
+          "B24": {
+            "v": "1000"
+          },
+          "A25": {
+            "v": "Annual rate"
+          },
+          "B25": {
+            "v": "0.05"
+          },
+          "A26": {
+            "v": "Years"
+          },
+          "B26": {
+            "v": "10"
+          },
+          "A27": {
+            "v": "Future value"
+          },
+          "B27": {
+            "f": "=B24*POWER(1+B25,B26)",
+            "format": {
+              "numfmt": "number"
+            }
+          }
+        },
+        "cols": {
+          "A": {
+            "w": 200
+          },
+          "B": {
+            "w": 100
+          },
+          "C": {
+            "w": 110
+          },
+          "D": {
+            "w": 100
+          }
+        },
+        "rows": {}
+      }
+    ]
+  },
+  "view": {
+    "active": 0,
+    "selections": [
+      {
+        "r": 0,
+        "c": 0
+      }
+    ],
+    "settings": {
+      "theme": "auto"
+    }
+  }
+}

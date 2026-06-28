@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<!-- ════════════════════════════════════════════════════════════════════
+     LocalOffice - core IO harness (dev aid, not a shipped tool)
+     Exercises the browser-only paths the Node tests can't reach:
+     new / open / save / save-as / download, File System Access + fallback.
+     Loads src/core.js as-is so what you test is what ships.
+     Open this file directly in a browser (works over file://).
+     ════════════════════════════════════════════════════════════════════ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LocalOffice core harness</title>
+<style>
+  /* Theme is explicit (not color-scheme:light dark) so the <select> popup can't
+     render white-on-white in dark mode - the cause of the faded dropdown text. */
+  :root { --bg:#fafaf7; --surface:#fff; --ink:#1a1a17; --ink-2:#5a5a55; --border:rgba(0,0,0,.16);
+          --ok:#18794e; --bad:#cd2b31; color-scheme: light; }
+  body.dark { --bg:#1a1a17; --surface:#242420; --ink:#f0ede6; --ink-2:#b5b1a8; --border:rgba(255,255,255,.20);
+              --ok:#4ade80; --bad:#f87171; color-scheme: dark; }
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 24px; max-width: 820px;
+         background: var(--bg); color: var(--ink); }
+  .bar { display: flex; align-items: center; gap: 10px; }
+  .bar .spacer { flex: 1; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .muted { color: var(--ink-2); }
+  fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 16px 0; padding: 12px 16px; }
+  legend { font-weight: 600; padding: 0 6px; }
+  button, select { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+                   background: var(--surface); color: var(--ink); cursor: pointer; }
+  select option { background: var(--surface); color: var(--ink); }
+  button:hover, select:hover { border-color: var(--ink-2); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  pre, textarea { background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+                  border-radius: 6px; }
+  pre { padding: 10px; overflow: auto; max-height: 320px; white-space: pre-wrap; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  #status { font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <h1>LocalOffice core harness</h1>
+    <span class="spacer"></span>
+    <button id="theme-btn" title="Light / dark">☾</button>
+  </div>
+  <p class="muted">
+    File System Access API supported here:
+    <strong id="fs-support">checking…</strong> ·
+    fallback is download/upload.
+  </p>
+
+  <fieldset>
+    <legend>Smoke test (pure logic in-browser)</legend>
+    <div class="row"><button id="run-smoke">Run smoke test</button> <span id="smoke-result"></span></div>
+    <pre id="smoke-log" hidden></pre>
+  </fieldset>
+
+  <fieldset>
+    <legend>Document IO</legend>
+    <div class="row">
+      <label>New of type
+        <select id="type">
+          <option>sheet</option><option>plan</option>
+          <option>flashcards</option><option>mindmap</option>
+          <option selected>slides</option>
+        </select>
+      </label>
+      <button id="new">New</button>
+      <button id="open">Open…</button>
+      <button id="save">Save</button>
+      <button id="saveas">Save As…</button>
+      <button id="download">Download</button>
+    </div>
+    <p>Status: <span id="status">no document</span></p>
+    <p class="muted">Edit the JSON below, then Save - unknown fields you add should survive a round-trip.</p>
+    <textarea id="doc" rows="16" style="width:100%; font-family:ui-monospace,monospace; font-size:12px;"></textarea>
+  </fieldset>
+
+<script src="./src/core.js"></script>
+<script>
+'use strict';
+const LO = window.LocalOffice;
+const $ = (id) => document.getElementById(id);
+
+// ── theme (shared key with the rest of the suite) ──────────────────────
+const THEME_KEY = 'localoffice_theme';
+function applyTheme() {
+  let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) {}
+  const dark = s === 'dark' || (s === null && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.body.classList.toggle('dark', dark);
+  $('theme-btn').textContent = dark ? '☀' : '☾';
+}
+$('theme-btn').onclick = () => { const d = document.body.classList.contains('dark'); try { localStorage.setItem(THEME_KEY, d ? 'light' : 'dark'); } catch (e) {} applyTheme(); };
+applyTheme();
+
+$('fs-support').textContent = LO.supportsFS() ? 'yes' : 'no';
+
+// ── in-browser smoke test (does not duplicate the Node suite; just confirms
+//    the same module loads and behaves in a DOM context) ────────────────
+$('run-smoke').onclick = () => {
+  const log = []; let bad = 0;
+  const check = (name, cond) => { log.push((cond ? '✓ ' : '✗ ') + name); if (!cond) bad++; };
+  try {
+    const env = LO.createEnvelope('slides', { title: 'Smoke' });
+    check('createEnvelope validates', LO.validate(env).ok);
+    const text = LO.serialize(env);
+    const { envelope } = LO.parse(text);
+    check('round-trips title', envelope.meta.title === 'Smoke');
+    envelope.body.unknownFuture = 42;
+    check('preserves unknown body field', LO.parse(LO.stringify(envelope)).envelope.body.unknownFuture === 42);
+    check('rejects non-envelope', (() => { try { LO.parse('{"x":1}'); return false; } catch { return true; } })());
+    check('dispatch falls back to default', LO.dispatch({ type: 'kanban' }, { default: () => true }) === true);
+  } catch (e) { log.push('THREW: ' + e.message); bad++; }
+  const r = $('smoke-result');
+  r.textContent = bad ? `${bad} failed` : 'all passed';
+  r.className = bad ? 'bad' : 'ok';
+  const pre = $('smoke-log'); pre.hidden = false; pre.textContent = log.join('\n');
+};
+
+// ── document IO state ────────────────────────────────────────────────
+let current = null;   // the live envelope
+let handle = null;    // FileSystemFileHandle when available
+
+function show(env, msg) {
+  current = env;
+  $('doc').value = LO.stringify(env);
+  $('status').textContent = msg;
+}
+function readEditor() {
+  // Pull any edits from the textarea back into `current` before saving.
+  const { envelope } = LO.parse($('doc').value);
+  current = envelope;
+  return current;
+}
+
+$('new').onclick = () => {
+  handle = null;
+  show(LO.createEnvelope($('type').value, { title: 'Untitled', app: 'harness@1' }), 'new (unsaved)');
+};
+
+$('open').onclick = async () => {
+  try {
+    const res = await LO.openFile();
+    handle = res.handle;
+    show(res.envelope, `opened ${res.name}` + (res.warnings.length ? ` - ${res.warnings.join(' ')}` : ''));
+  } catch (e) { $('status').textContent = 'open failed: ' + e.message; }
+};
+
+$('save').onclick = async () => {
+  if (!current) return;
+  try {
+    readEditor();
+    const res = await LO.saveFile(current, handle);
+    handle = res.handle;
+    show(current, `saved ${res.name}`);
+  } catch (e) { $('status').textContent = 'save failed: ' + e.message; }
+};
+
+$('saveas').onclick = async () => {
+  if (!current) return;
+  try {
+    readEditor();
+    const res = await LO.saveFileAs(current, LO.suggestedName(current));
+    handle = res.handle;
+    show(current, `saved as ${res.name}`);
+  } catch (e) { $('status').textContent = 'save-as failed: ' + e.message; }
+};
+
+$('download').onclick = () => {
+  if (!current) return;
+  readEditor();
+  LO.download(LO.serialize(current), LO.suggestedName(current));
+  $('status').textContent = 'downloaded ' + LO.suggestedName(current);
+};
+</script>
+</body>
+</html>

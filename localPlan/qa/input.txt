@@ -1,0 +1,8 @@
+# QA sample for braindump.py
+home: plan meals for the week (priority)
+home: grocery run -- check what's already in the pantry first
+home: deep clean the kitchen [Soon]
+family > Now: pickup roster for soccer (priority)
+self: book annual physical [Soon]
+wellness: daily journaling (priority)
+wellness: set a bedtime routine -- 8pm lights out

@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<!-- ════════════════════════════════════════════════════════════════════
+     localCards - a LocalOffice tool (body type: flashcards)
+     Deck authoring + spaced-repetition review. FSRS-lite scheduling.
+     Optional per-card auto-grading via the shared verification kernel
+     (exact / coverage only - both deterministic; no LLM ever grades).
+
+     Single file · no dependencies · no build step · fully offline.
+     Reads/writes localoffice/v1. MIT.
+     ════════════════════════════════════════════════════════════════════ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>localCards</title>
+<style>
+  :root {
+    --bg:#1a1c20; --panel:#23262c; --panel2:#2b2f37; --line:#3a3f49; --stage:#15161a;
+    --fg:#e7e9ee; --muted:#9aa1ad; --accent:#3b6ef6; --danger:#cd2b31;
+    --good:#18794e; --bad:#cd2b31;
+    --b-new:#9db8ff; --b-due:#f0a875; --b-ok:#74d6a4; --err:#ff8a8e;
+    /* aliases so the shared JSON inspector (Hub variable names) themes correctly -
+       without these, --ink fell back to near-black and the JSON was invisible on the
+       dark background. Resolved at use-time, so they track both themes. */
+    --surface:var(--panel); --ink:var(--fg); --ink-2:var(--muted); --border:var(--line); --border-strong:var(--line);
+    color-scheme: dark;
+  }
+  :root[data-mode="light"] {
+    --bg:#f3f4f6; --panel:#ffffff; --panel2:#eaecef; --line:#d6dae1; --stage:#e9ebef;
+    --fg:#1a1c20; --muted:#5c6470; --accent:#2f6bff; --danger:#cd2b31;
+    --good:#18794e; --bad:#cd2b31;
+    --b-new:#2a4fbf; --b-due:#9a3412; --b-ok:#11663b; --err:#b91c1c;
+    --surface:var(--panel); --ink:var(--fg); --ink-2:var(--muted); --border:var(--line); --border-strong:var(--line); color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background: var(--bg); color: var(--fg); display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+           background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header .brand { font-weight: 700; margin-right: 6px; } header .brand b { color: var(--accent); }
+  input, select, textarea, button { font: inherit; }
+  input[type=text], input.name, select, textarea {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+    border-radius: 6px; padding: 6px 8px; }
+  input.name { min-width: 180px; }
+  textarea { width: 100%; resize: vertical; }
+  .spacer { flex: 1; }
+  button { padding: 6px 11px; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--panel2); color: var(--fg); cursor: pointer; }
+  button:hover { border-color: #586172; } button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.ghost { background: transparent; }
+  button.danger:hover { border-color: var(--danger); color: #ff8a8e; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .status { color: var(--muted); font-size: 12px; }
+
+  main { flex: 1; min-height: 0; display: flex; }
+
+  /* ── manage view ── */
+  #manage { flex: 1; display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
+  #list-pane { overflow: auto; border-right: 1px solid var(--line); padding: 10px; }
+  #list-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .card-row { border: 1px solid var(--line); border-radius: 8px; background: var(--panel2);
+              padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
+  .card-row.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card-row .front { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-row .meta { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { background: #80808026; border-radius: 10px; padding: 0 7px; font-size: 11px; }
+  .badge { border-radius: 10px; padding: 0 7px; font-size: 11px; }
+  /* mode-aware: translucent tint of the badge's own colour + a contrasting text
+     colour per app theme, so labels stay readable in light AND dark mode */
+  .badge.new { background: color-mix(in srgb, var(--b-new) 16%, transparent); color: var(--b-new); }
+  .badge.due { background: color-mix(in srgb, var(--b-due) 18%, transparent); color: var(--b-due); }
+  .badge.ok  { background: color-mix(in srgb, var(--b-ok) 16%, transparent); color: var(--b-ok); }
+  #editor { overflow: auto; padding: 14px; background: var(--panel); }
+  #editor .field { margin-bottom: 12px; }
+  #editor label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .row2 { display: flex; gap: 8px; align-items: center; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 10px; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 8px; }
+
+  /* ── review view ── */
+  #review { flex: 1; display: flex; flex-direction: column; align-items: safe center; justify-content: safe center;
+            gap: 16px; padding: 24px; background: var(--stage); overflow: auto; }
+  .zoomctl { display: inline-flex; gap: 4px; align-items: center; margin-left: 12px; }
+  .zoomctl button { padding: 1px 8px; }
+  .rev-card { width: min(680px, 92vw); background: var(--panel); border: 1px solid var(--line);
+              border-radius: 12px; padding: 28px; box-shadow: 0 8px 30px #0006; }
+  .rev-front { font-size: 22px; font-weight: 600; white-space: pre-wrap; }
+  .rev-divider { border-top: 1px dashed var(--line); margin: 18px 0; }
+  .rev-back { font-size: 19px; white-space: pre-wrap; }
+  .rev-tags { margin-top: 14px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .rev-progress { color: var(--muted); font-size: 13px; }
+  .grade-row { display: flex; gap: 8px; }
+  .grade-row button { min-width: 84px; }
+  .typed { margin-top: 14px; }
+  .vresult { margin-top: 10px; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+  .vresult.pass { background: #18794e22; border: 1px solid #18794e66; }
+  .vresult.fail { background: #cd2b3122; border: 1px solid #cd2b3166; }
+  .kbd-hint { color: var(--muted); font-size: 12px; }
+  /* card overlays derive from the card's own theme (--card-fg / --card-accent),
+     set inline on .rev-card, so text stays visible on light AND dark card themes */
+  .cloze { background: color-mix(in srgb, var(--card-accent, #5b8cff) 20%, transparent);
+           color: var(--card-accent, #5b8cff); border-radius: 4px; padding: 0 6px; font-weight: 600; }
+  .cloze-ans { color: var(--card-accent, #5b8cff); }
+  .rev-card .status { color: color-mix(in srgb, var(--card-fg, #e7e9ee) 62%, transparent); }
+  .rev-card .rev-tags .chip { background: color-mix(in srgb, var(--card-fg, #e7e9ee) 14%, transparent); color: var(--card-fg, #e7e9ee); }
+  .rev-card .kbd-hint { color: color-mix(in srgb, var(--card-fg, #e7e9ee) 55%, transparent); }
+  .rev-card .rev-divider { border-color: color-mix(in srgb, var(--card-fg, #e7e9ee) 25%, transparent); }
+  /* card images */
+  .imgrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  .imgthumb { height: 54px; background: #0003; border-radius: 6px; overflow: hidden; display: flex; align-items: center; }
+  .imgthumb img { max-height: 54px; max-width: 130px; display: block; }
+  .cardimg { max-width: 100%; max-height: 42vh; border-radius: 8px; display: block; margin: 0 auto 12px; }
+  /* buttons + input on the study card follow the CARD theme (not the app theme),
+     so they stay visible whatever the app light/dark mode is */
+  .rev-card button { color: var(--card-fg, var(--fg)); background: color-mix(in srgb, var(--card-fg, #888) 10%, transparent);
+                     border: 1px solid color-mix(in srgb, var(--card-fg, #888) 28%, transparent); }
+  .rev-card button:hover { border-color: color-mix(in srgb, var(--card-fg, #888) 50%, transparent); }
+  .rev-card button.primary { color: #fff; background: var(--card-accent, var(--accent)); border-color: var(--card-accent, var(--accent)); }
+  .rev-card input[type=text] { color: var(--card-fg, var(--fg)); background: color-mix(in srgb, var(--card-fg, #888) 8%, transparent);
+                               border: 1px solid color-mix(in srgb, var(--card-fg, #888) 28%, transparent); }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; margin: 10px 0; }
+  .stat-grid .n { font-size: 22px; font-weight: 700; } .stat-grid .l { color: var(--muted); font-size: 12px; }
+  .bar7 { display: flex; gap: 4px; align-items: flex-end; height: 56px; margin: 6px 0 2px; }
+  .bar7 div { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
+  .bar7-l { display: flex; gap: 4px; } .bar7-l span { flex: 1; text-align: center; font-size: 10px; color: var(--muted); }
+
+  /* ── modal ── */
+  .modal-bg { position: fixed; inset: 0; background: #000a; display: none; align-items: center; justify-content: center; z-index: 50; }
+  .modal-bg.on { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px;
+           width: min(620px, 94vw); max-height: 88vh; overflow: auto; }
+  .modal h2 { margin: 0 0 10px; font-size: 16px; }
+  .modal textarea { min-height: 160px; font-family: ui-monospace, monospace; font-size: 13px; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+  /* ── optional local-AI drawer ── */
+  .hidden { display: none !important; }
+  #ai-panel { position: fixed; top: 0; right: 0; width: 380px; max-width: 94vw; height: 100%;
+              background: var(--panel); border-left: 1px solid var(--line); z-index: 60;
+              display: flex; flex-direction: column; box-shadow: -8px 0 30px #0006; }
+  .ai-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .ai-head strong { flex: 0 0 auto; } .ai-head .status { flex: 1; min-width: 0; }
+  .ai-body { padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+  .ai-body h3 { margin: 6px 0 0; }
+  .ai-body textarea { min-height: 120px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .ai-fence { background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 6px; padding: 8px 10px; font-size: 12px; color: var(--fg); }
+  .ai-row { display: flex; gap: 8px; align-items: center; }
+  .ai-card { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
+  .ai-card .front { font-weight: 600; }
+  #ai-status.err { color: var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">local<b>Cards</b></span>
+  <input class="name" id="deck-name" placeholder="Deck name" aria-label="Deck name">
+  <button id="btn-new" class="ghost">New</button>
+  <select id="deck-tpl" title="Start from a sample deck">
+    <option value="">Sample…</option>
+    <option value="demo">Feature demo</option>
+    <option value="science">Science basics</option>
+    <option value="geography">World geography</option>
+    <option value="lang">Language starter</option>
+  </select>
+  <button id="btn-open" class="ghost">Open</button>
+  <button id="btn-save" class="primary">Save</button>
+  <button id="btn-saveas" class="ghost">Save As</button>
+  <button id="btn-import" class="ghost">Import</button>
+  <button id="btn-export" class="ghost">Export TSV</button>
+  <button id="btn-stats" class="ghost">Stats</button>
+  <button id="btn-ai" class="ghost" title="Local AI - optional, needs Ollama. Writes cards; never grades.">✦ AI</button>
+  <span class="spacer"></span>
+  <button id="btn-mode" class="ghost" title="Light / dark app theme">☾</button>
+  <select id="deck-theme" title="Card theme (study card)">
+    <option value="midnight">Midnight</option>
+    <option value="paper">Paper</option>
+    <option value="slate">Slate</option>
+    <option value="warm">Warm</option>
+  </select>
+  <span class="seg">
+    <button id="tab-manage" class="on">Manage</button>
+    <button id="tab-review">Review</button>
+  </span>
+  <span class="status" id="status">-</span>
+</header>
+
+<main>
+  <!-- MANAGE -->
+  <div id="manage">
+    <div id="list-pane">
+      <div id="list-head">
+        <button id="btn-add" class="primary">＋ Add card</button>
+        <select id="add-preset" title="Add a card of a given type">
+          <option value="">＋ type…</option>
+          <option value="basic">Basic Q&amp;A</option>
+          <option value="cloze">Cloze</option>
+          <option value="keyword">Keyword recall</option>
+          <option value="exact">Exact term</option>
+          <option value="vocab">Vocab (both-way)</option>
+        </select>
+        <select id="tag-filter"><option value="">All tags</option></select>
+        <span class="status" id="deck-stats"></span>
+      </div>
+      <div id="card-list"></div>
+    </div>
+    <div id="editor"></div>
+  </div>
+
+  <!-- REVIEW -->
+  <div id="review" style="display:none"></div>
+</main>
+
+<!-- IMPORT MODAL -->
+<div class="modal-bg" id="import-modal">
+  <div class="modal">
+    <h2>Import cards</h2>
+    <p class="status">One card per line. Separate front / back / tags with a <b>Tab</b> (or comma).
+      Tags are <code>;</code>-separated. Example:<br>
+      <code>What is 2+2?&#9;4&#9;math;easy</code></p>
+    <textarea id="import-text" placeholder="front&#9;back&#9;tag1;tag2"></textarea>
+    <div class="actions">
+      <button id="import-merge-file" class="ghost">Merge a deck file…</button>
+      <span class="spacer"></span>
+      <button id="import-cancel" class="ghost">Cancel</button>
+      <button id="import-do" class="primary">Add cards</button>
+    </div>
+  </div>
+</div>
+
+<!-- AI DRAWER (optional, local Ollama only) -->
+<div id="ai-panel" class="hidden">
+  <div class="ai-head">
+    <strong>✦ Local AI</strong>
+    <span class="status" id="ai-status">…</span>
+    <button id="ai-close" class="ghost">✕</button>
+  </div>
+  <div class="ai-body">
+    <div class="ai-fence"><b>AI writes the test; the kernel grades it.</b> The model helps you draft
+      cards and keyword checks. It <b>never</b> decides correctness - that's always the deterministic
+      kernel, offline. Talks only to your local Ollama at <code>localhost:11434</code>.</div>
+    <label>Model <select id="ai-model"><option value="">(detecting…)</option></select></label>
+    <h3>Distill to deck</h3>
+    <p class="status" style="margin:0">Paste study material - a datasheet, an RFC, lecture notes.
+      The model drafts cards <i>and</i> the keyword check for each. You review before adding.</p>
+    <textarea id="ai-source" placeholder="Paste text to turn into flashcards…"></textarea>
+    <div class="ai-row">
+      <label class="status">Cards <input type="text" id="ai-count" value="10" style="width:46px"></label>
+      <button id="ai-distill" class="primary">Generate cards</button>
+      <button id="ai-stop" class="ghost hidden">Stop</button>
+    </div>
+    <div id="ai-preview"></div>
+  </div>
+</div>
+
+<!-- STATS MODAL -->
+<div class="modal-bg" id="stats-modal">
+  <div class="modal">
+    <h2>Deck stats</h2>
+    <div id="stats-body"></div>
+    <div class="actions"><button id="stats-close" class="primary">Close</button></div>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   SHARED CORE - vendored from src/core.js (keep in sync).
+   ════════════════════════════════════════════════════════════════════ */
+'use strict';
+const LocalOffice = (function () {
+  const FORMAT = 'localoffice/v1', FORMAT_PREFIX = 'localoffice/', FILE_EXT = '.localoffice.json';
+  const TYPES = ['sheet', 'plan', 'flashcards', 'mindmap', 'slides'];
+  function nowISO() { return new Date().toISOString(); }
+  function uuid() {
+    const c = (typeof crypto !== 'undefined') ? crypto : null;
+    if (c && typeof c.randomUUID === 'function') { try { return c.randomUUID(); } catch (_) {} }
+    let rnd;
+    if (c && typeof c.getRandomValues === 'function') { const b = new Uint8Array(16); c.getRandomValues(b); b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80; rnd = (i) => b[i]; }
+    else { const a = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256)); a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80; rnd = (i) => a[i]; }
+    const h = []; for (let i = 0; i < 16; i++) h.push((rnd(i) + 0x100).toString(16).slice(1));
+    return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+  }
+  function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function freshBody(type) {
+    switch (type) {
+      case 'sheet': return { sheets: [] };
+      case 'plan': return { tasks: [] };
+      case 'flashcards': return { deck: { name: '' }, scheduler: 'fsrs-lite', cards: [] };
+      case 'mindmap': return { nodes: [], edges: [] };
+      case 'slides': return { theme: {}, slides: [] };
+      default: return {};
+    }
+  }
+  function createEnvelope(type, opts = {}) {
+    if (!TYPES.includes(type)) throw new Error(`createEnvelope: unknown type "${type}"`);
+    const ts = nowISO();
+    return { format: FORMAT, type, meta: { id: opts.id || uuid(), title: opts.title || '', created: ts, modified: ts, app: opts.app || '', tags: Array.isArray(opts.tags) ? opts.tags.slice() : [] }, body: isPlainObject(opts.body) ? opts.body : freshBody(type) };
+  }
+  function validate(obj) {
+    const errors = [], warnings = [];
+    if (!isPlainObject(obj)) return { ok: false, errors: ['Not a JSON object.'], warnings, type: null, formatVersion: null };
+    let formatVersion = null;
+    if (typeof obj.format !== 'string') errors.push('Missing "format" field.');
+    else if (!obj.format.startsWith(FORMAT_PREFIX)) errors.push(`Unrecognized format "${obj.format}".`);
+    else { formatVersion = obj.format.slice(FORMAT_PREFIX.length); if (obj.format !== FORMAT) warnings.push(`Format "${obj.format}" differs.`); }
+    if (typeof obj.type !== 'string' || !obj.type) errors.push('Missing "type" field.');
+    else if (!TYPES.includes(obj.type)) warnings.push(`Unknown type "${obj.type}".`);
+    if (!isPlainObject(obj.meta)) errors.push('Missing or invalid "meta".');
+    if (!isPlainObject(obj.body)) warnings.push('Missing or invalid "body".');
+    return { ok: errors.length === 0, errors, warnings, type: typeof obj.type === 'string' ? obj.type : null, formatVersion };
+  }
+  function normalize(obj) {
+    if (!isPlainObject(obj.meta)) obj.meta = {};
+    const m = obj.meta;
+    if (typeof m.id !== 'string' || !m.id) m.id = uuid();
+    if (typeof m.title !== 'string') m.title = '';
+    if (typeof m.created !== 'string') m.created = nowISO();
+    if (typeof m.modified !== 'string') m.modified = m.created;
+    if (typeof m.app !== 'string') m.app = '';
+    if (!Array.isArray(m.tags)) m.tags = [];
+    if (!isPlainObject(obj.body)) obj.body = freshBody(obj.type);
+    return obj;
+  }
+  class LoadError extends Error { constructor(m, d) { super(m); this.name = 'LoadError'; this.detail = d; } }
+  function parse(text, opts = {}) {
+    let raw; try { raw = JSON.parse(text); } catch (e) { throw new LoadError('File is not valid JSON.', e.message); }
+    let r = validate(raw), obj = raw;
+    if (!r.ok && typeof opts.coerce === 'function') { const c = opts.coerce(raw); if (isPlainObject(c)) { obj = c; r = validate(obj); } }
+    if (!r.ok) throw new LoadError('Not a LocalOffice file: ' + r.errors.join(' '), r.errors);
+    normalize(obj); return { envelope: obj, warnings: r.warnings };
+  }
+  function stringify(env, pretty = true) { return JSON.stringify(env, null, pretty ? 2 : 0); }
+  function serialize(env, opts = {}) {
+    if (!isPlainObject(env)) throw new Error('serialize: not an object');
+    const r = validate(env); if (!r.ok) throw new Error('serialize: invalid - ' + r.errors.join(' '));
+    if (opts.touch !== false) { if (!isPlainObject(env.meta)) env.meta = {}; env.meta.modified = nowISO(); }
+    return stringify(env, opts.pretty !== false);
+  }
+  function slugify(s) { return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); }
+  function suggestedName(env) { return (slugify(env && env.meta && env.meta.title) || (env && env.type) || 'untitled') + FILE_EXT; }
+  function supportsFS() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; }
+  const PICKER_TYPES = [{ description: 'LocalOffice file', accept: { 'application/json': ['.json'] } }];
+  function isEmbedded() { return typeof window !== 'undefined' && window.parent && window.parent !== window; }
+  // Embedded in the Hub: file pickers are blocked in a cross-origin subframe, so
+  // delegate the write to the Hub (top frame), which holds the directory handle
+  // and saves in place - even over file://.
+  function hubSave(text, name, asNew) {
+    return new Promise((resolve, reject) => {
+      const id = 'lo' + Math.random().toString(36).slice(2);
+      function on(e) { const m = e.data; if (!m || m.proto !== 'localoffice' || m.type !== 'saved' || m.id !== id) return; window.removeEventListener('message', on); if (m.ok) resolve({ handle: null, name: m.name || name }); else if (m.error === 'cancelled') { const a = new Error('cancelled'); a.name = 'AbortError'; reject(a); } else reject(new Error(m.error || 'Save failed')); }
+      window.addEventListener('message', on);
+      window.parent.postMessage({ proto: 'localoffice', type: 'save', id, text, name, asNew: !!asNew }, '*');
+    });
+  }
+  async function openFile(opts = {}) {
+    if (supportsFS()) {
+      try { const [h] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false }); const f = await h.getFile(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: h, name: f.name, warnings }; }
+      catch (e) { if (e && e.name === 'AbortError') throw e; /* picker blocked (cross-origin iframe) → upload fallback */ }
+    }
+    const f = await pickFileFallback(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: null, name: f.name, warnings };
+  }
+  function pickFileFallback() { return new Promise((res, rej) => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json'; i.style.display = 'none'; i.addEventListener('change', () => { const f = i.files && i.files[0]; i.remove(); f ? res(f) : rej(new Error('No file selected.')); }); document.body.appendChild(i); i.click(); }); }
+  async function saveFile(env, handle, opts = {}) {
+    const text = serialize(env, opts);
+    if (isEmbedded()) return hubSave(text, suggestedName(env), false);
+    if (handle && typeof handle.createWritable === 'function') { const w = await handle.createWritable(); await w.write(text); await w.close(); return { handle, name: handle.name }; }
+    return saveFileAs(env, suggestedName(env), { ...opts, _text: text });
+  }
+  async function saveFileAs(env, suggested, opts = {}) {
+    const text = opts._text != null ? opts._text : serialize(env, opts); const name = suggested || suggestedName(env);
+    if (isEmbedded()) return hubSave(text, name, true);
+    if (supportsFS()) { const h = await window.showSaveFilePicker({ suggestedName: name, types: PICKER_TYPES }); const w = await h.createWritable(); await w.write(text); await w.close(); return { handle: h, name: h.name }; }
+    download(text, name); return { handle: null, name };
+  }
+  function download(text, filename) { const b = new Blob([text], { type: 'application/json' }), u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || ('untitled' + FILE_EXT); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 0); }
+  return { FORMAT, FILE_EXT, TYPES, uuid, nowISO, createEnvelope, validate, normalize, parse, stringify, serialize, slugify, suggestedName, LoadError, supportsFS, openFile, saveFile, saveFileAs, download };
+})();
+
+/* ════════════════════════════════════════════════════════════════════
+   VERIFICATION KERNEL - vendored from src/verify.js (keep in sync).
+   Deterministic exact + coverage only.
+   ════════════════════════════════════════════════════════════════════ */
+const LocalVerify = (function () {
+  const COMPARATORS = ['exact', 'coverage'];
+  function normalize(s, params = {}) {
+    let out = String(s == null ? '' : s);
+    if (params.trim !== false) out = out.trim();
+    if (params.collapseWhitespace !== false) out = out.replace(/\s+/g, ' ');
+    if (!params.caseSensitive) out = out.toLowerCase();
+    if (params.stripPunctuation) out = out.replace(/[.,;:!?'"()\[\]{}]/g, '');
+    return out;
+  }
+  function exact(actual, params = {}) {
+    const exp = normalize(params.expected, params), got = normalize(actual, params);
+    // fail closed on an empty/absent expected: an empty answer must not match an
+    // empty target (a card whose answer was never authored is not "correct").
+    if (params.expected == null || exp === '') return { pass: false, score: 0, detail: { expected: params.expected == null ? '' : String(params.expected), got: String(actual == null ? '' : actual), reason: 'no expected value' } };
+    const pass = got === exp;
+    return { pass, score: pass ? 1 : 0, detail: { expected: String(params.expected), got: String(actual == null ? '' : actual) } };
+  }
+  function coverage(actual, params = {}) {
+    const required = Array.isArray(params.required) ? params.required : [], hay = normalize(actual, params), hit = [], missed = [];
+    for (const kw of required) { const n = normalize(kw, params); if (n && hay.indexOf(n) !== -1) hit.push(kw); else missed.push(kw); }
+    // threshold clamps to (0,1]: a 0/negative threshold would auto-pass with zero
+    // keywords matched (score>=0). Default + invalid -> 1 (require all).
+    const total = required.length, score = total ? hit.length / total : 0, threshold = (typeof params.threshold === 'number' && params.threshold > 0) ? Math.min(params.threshold, 1) : 1;
+    return { pass: total > 0 && score >= threshold, score, detail: { hit, missed, threshold } };
+  }
+  const FNS = { exact, coverage };
+  function isSupported(c) { return COMPARATORS.indexOf(c) !== -1; }
+  function run(block, actual, opts = {}) {
+    if (!block || typeof block !== 'object') throw new Error('verify: missing block');
+    if (!isSupported(block.comparator)) throw new Error(`verify: comparator "${block.comparator}" not available in v1.`);
+    const result = FNS[block.comparator](actual, block.params || {});
+    if (opts.mutate !== false) { block.result = result; if (block.deterministic == null) block.deterministic = true; }
+    return result;
+  }
+  function makeBlock(comparator, params = {}) { if (!isSupported(comparator)) throw new Error('verify: unsupported'); return { comparator, params, deterministic: true, result: { pass: null, score: null, detail: {} } }; }
+  return { COMPARATORS, normalize, exact, coverage, run, makeBlock, isSupported };
+})();
+
+/* ════════════════════════════════════════════════════════════════════
+   localCards APP
+   ════════════════════════════════════════════════════════════════════ */
+const APP_ID = 'localcards@1.0';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ── visual card themes (applied to the review card) ──
+const FONTS = { system: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", serif: "Georgia, 'Times New Roman', serif", mono: "ui-monospace, 'Cascadia Code', monospace" };
+const THEME_PRESETS = {
+  midnight: { bg: '#23262c', fg: '#e7e9ee', accent: '#5b8cff', font: 'system' },
+  paper:    { bg: '#fffef8', fg: '#1a1c20', accent: '#3b6ef6', font: 'serif' },
+  slate:    { bg: '#0f172a', fg: '#e2e8f0', accent: '#38bdf8', font: 'system' },
+  warm:     { bg: '#faf6f0', fg: '#2a2420', accent: '#c2410c', font: 'serif' },
+};
+function defaultTheme() { return { ...THEME_PRESETS.midnight, preset: 'midnight' }; }
+function theme() { return Object.assign(defaultTheme(), (deck && deck.body && deck.body.theme) || {}); }
+function themeStyle(t) { return `background:${esc(t.bg)};color:${esc(t.fg)};font-family:${FONTS[t.font] || FONTS.system};--card-fg:${esc(t.fg)};--card-accent:${esc(t.accent)};`; }
+
+// ── dates / FSRS-lite ────────────────────────────────────────────────
+function today() { return new Date().toISOString().slice(0, 10); }
+function addDays(dateStr, n) { const d = new Date((dateStr || today()) + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function freshSrs() { return { due: today(), interval: 0, ease: 2.5, reps: 0, lapses: 0, state: 'new' }; }
+// review items are forward (front→back) or reverse (back→front); each direction
+// has its own schedule (card.srs / card.srsRev). card.both enables the reverse.
+function srsGet(card, dir) { return dir === 'rev' ? card.srsRev : card.srs; }
+function srsEnsure(card, dir) { if (dir === 'rev') { if (!card.srsRev) card.srsRev = freshSrs(); return card.srsRev; } if (!card.srs) card.srs = freshSrs(); return card.srs; }
+function isDue(card, dir) { const s = srsGet(card, dir || 'fwd') || freshSrs(); return (s.due || today()) <= today(); }
+function isNew(card, dir) { const s = srsGet(card, dir || 'fwd'); return !s || s.state === 'new'; }
+function reviewItems(card) { const items = [{ card, dir: 'fwd' }]; if (card.both) items.push({ card, dir: 'rev' }); return items; }
+function allItems() { const out = []; cards().forEach(c => reviewItems(c).forEach(it => out.push(it))); return out; }
+
+// cloze: {{answer}} markers - the deterministic "the test writes itself".
+const CLOZE_RE = /\{\{(.+?)\}\}/g;
+function isCloze(text) { return /\{\{.+?\}\}/.test(text || ''); }
+function clozeAnswers(text) { const a = []; let m; CLOZE_RE.lastIndex = 0; while ((m = CLOZE_RE.exec(String(text || '')))) a.push(m[1].trim()); return a; }
+function renderCloze(text, reveal) {
+  const raw = String(text || ''); let out = '', last = 0, m; CLOZE_RE.lastIndex = 0;
+  while ((m = CLOZE_RE.exec(raw))) {
+    out += esc(raw.slice(last, m.index));
+    out += reveal ? `<b class="cloze-ans">${esc(m[1])}</b>` : '<span class="cloze">[…]</span>';
+    last = m.index + m[0].length;
+  }
+  out += esc(raw.slice(last)); return out;
+}
+
+// Deterministic FSRS-lite (SM-2-style). grade: 1 Again, 2 Hard, 3 Good, 4 Easy.
+function schedule(card, grade, dir) {
+  const s = srsEnsure(card, dir || 'fwd');
+  s.reps = (s.reps || 0) + 1;
+  let interval = s.interval || 0, ease = s.ease || 2.5, lapses = s.lapses || 0, state = s.state || 'new';
+  const fresh = (state === 'new' || state === 'learning' || state === 'relearning' || interval === 0);
+  if (grade === 1) {                       // Again
+    lapses++; ease = Math.max(1.3, ease - 0.2); interval = 0; state = 'relearning';
+  } else if (fresh) {                       // graduating from new/relearning
+    interval = grade === 4 ? 4 : 1; state = 'review';
+    if (grade === 4) ease = ease + 0.15;
+  } else {                                  // established review card
+    if (grade === 2) { ease = Math.max(1.3, ease - 0.15); interval = Math.max(1, Math.round(interval * 1.2)); }
+    else if (grade === 3) { interval = Math.max(1, Math.round(interval * ease)); }
+    else { ease = ease + 0.15; interval = Math.max(1, Math.round(interval * ease * 1.3)); }
+    state = 'review';
+  }
+  s.interval = interval; s.ease = Math.round(ease * 100) / 100; s.lapses = lapses; s.state = state;
+  s.due = addDays(today(), interval);
+  return s;
+}
+
+// ── state ────────────────────────────────────────────────────────────
+let deck = null, handle = null, dirty = false;
+let view = 'manage';          // 'manage' | 'review'
+let selId = null;             // selected card id (manage)
+let tagFilter = '';
+// review session
+let queue = [], qpos = 0, revealed = false, reviewedCount = 0, lastVResult = null;
+
+function cards() { return deck.body.cards; }
+function cardById(id) { return cards().find(c => c.id === id); }
+function freshCard(front = '', back = '', tags = []) { return { id: LocalOffice.uuid(), front, back, tags: tags.slice ? tags.slice() : [], srs: freshSrs() }; }
+
+// ── images: re-encode through a <canvas> → strips EXIF/GPS/metadata + downscales ──
+const MAX_IMG_DIM = 1600, IMG_QUALITY = 0.85;
+const kb = (dataURI) => { const i = String(dataURI).indexOf(','); return Math.round((String(dataURI).length - i - 1) * 0.75 / 1024); };
+let imgSide = 'front'; // which side a pasted/dropped image goes to (the side you're editing)
+function processImageFile(file, maxDim = MAX_IMG_DIM) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (!w || !h) return reject(new Error('Unsupported image'));
+        const scale = Math.min(1, maxDim / Math.max(w, h));
+        w = Math.round(w * scale); h = Math.round(h * scale);
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        const keepAlpha = /png|svg|webp|gif/i.test(file.type || '');
+        resolve(cv.toDataURL(keepAlpha ? 'image/png' : 'image/jpeg', IMG_QUALITY)); // canvas output carries NO source metadata
+      };
+      img.onerror = () => reject(new Error('Could not decode image'));
+      img.src = fr.result;
+    };
+    fr.onerror = () => reject(new Error('Could not read file'));
+    fr.readAsDataURL(file);
+  });
+}
+async function setCardImage(card, side, file) {
+  if (!file || (file.type || '').indexOf('image') !== 0) return;
+  try { card[side + 'Img'] = await processImageFile(file); markDirty(); renderEditor(); renderList(); setStatus('Image added to ' + side + ' (' + kb(card[side + 'Img']) + ' KB, metadata stripped).'); }
+  catch (e) { setStatus('Image failed: ' + e.message); }
+}
+
+function setStatus(m) { $('status').textContent = m; }
+function markDirty() { dirty = true; deck.meta.modified = LocalOffice.nowISO(); }
+
+// ── lifecycle ────────────────────────────────────────────────────────
+function newDeck() {
+  deck = LocalOffice.createEnvelope('flashcards', { title: '', app: APP_ID, body: { deck: { name: '' }, scheduler: 'fsrs-lite', theme: defaultTheme(), cards: [] } });
+  handle = null; dirty = false; selId = null; tagFilter = '';
+  switchView('manage'); setStatus('New deck');
+}
+async function openDeck() {
+  try {
+    const res = await LocalOffice.openFile();
+    if (res.envelope.type !== 'flashcards') { setStatus(`Opened a "${res.envelope.type}" file - localCards only edits flashcards. Title: ${res.envelope.meta.title || '(untitled)'}`); return; }
+    deck = res.envelope;
+    if (!deck.body.deck) deck.body.deck = { name: '' };
+    if (!deck.body.scheduler) deck.body.scheduler = 'fsrs-lite';
+    if (!deck.body.theme) deck.body.theme = defaultTheme();
+    if (!Array.isArray(deck.body.cards)) deck.body.cards = [];
+    deck.body.cards.forEach(c => { if (!c.srs) c.srs = freshSrs(); if (!Array.isArray(c.tags)) c.tags = []; });
+    handle = res.handle; dirty = false; selId = cards()[0] ? cards()[0].id : null; tagFilter = '';
+    switchView('manage'); setStatus(`Opened ${res.name}` + (res.warnings.length ? ` - ${res.warnings.join(' ')}` : ''));
+  } catch (e) { if (e && e.name !== 'AbortError') setStatus('Open failed: ' + e.message); }
+}
+async function saveDeck(asNew) {
+  try {
+    deck.meta.app = APP_ID;
+    deck.meta.title = deck.body.deck.name || deck.meta.title || 'Untitled deck';
+    const res = asNew ? await LocalOffice.saveFileAs(deck, LocalOffice.suggestedName(deck)) : await LocalOffice.saveFile(deck, handle);
+    handle = res.handle; dirty = false; setStatus(`Saved ${res.name}`);
+  } catch (e) { if (e && e.name !== 'AbortError') setStatus('Save failed: ' + e.message); }
+}
+
+// ── tags / stats ─────────────────────────────────────────────────────
+function allTags() { const s = new Set(); cards().forEach(c => (c.tags || []).forEach(t => s.add(t))); return [...s].sort(); }
+function filteredCards() { return tagFilter ? cards().filter(c => (c.tags || []).includes(tagFilter)) : cards(); }
+function dueCount() { return allItems().filter(it => isDue(it.card, it.dir)).length; }
+
+// ── manage rendering ─────────────────────────────────────────────────
+function cardBadge(c) {
+  if (isNew(c)) return '<span class="badge new">new</span>';
+  if (isDue(c)) return '<span class="badge due">due</span>';
+  return `<span class="badge ok">${esc(c.srs.due)}</span>`;
+}
+function renderList() {
+  const list = $('card-list'), arr = filteredCards();
+  if (!cards().length) { list.innerHTML = `<div class="empty">No cards yet.<br>Add a card (try the <b>＋ type…</b> menu), <b>Import</b>, or load a <b>Sample…</b> deck.</div>`; return; }
+  list.innerHTML = arr.map(c =>
+    `<div class="card-row${c.id === selId ? ' active' : ''}" data-id="${c.id}">
+       <div class="front">${esc(c.front) || '<span class="status">(empty front)</span>'}</div>
+       <div class="meta">${cardBadge(c)}${isCloze(c.front) ? '<span class="chip">cloze</span>' : ''}${(c.frontImg || c.backImg) ? '<span class="chip">🖼</span>' : ''}${c.both ? '<span class="chip">↔ both</span>' : ''}${(c.tags || []).map(t => `<span class="chip">${esc(t)}</span>`).join('')}${c.verify ? '<span class="chip">✓ ' + esc(c.verify.comparator) + '</span>' : ''}</div>
+     </div>`).join('');
+  list.querySelectorAll('.card-row').forEach(el => el.addEventListener('click', () => { selId = el.getAttribute('data-id'); renderList(); renderEditor(); }));
+}
+function renderTagFilter() {
+  const sel = $('tag-filter'), tags = allTags();
+  sel.innerHTML = '<option value="">All tags</option>' + tags.map(t => `<option value="${esc(t)}"${t === tagFilter ? ' selected' : ''}>${esc(t)}</option>`).join('');
+}
+function renderStats() { $('deck-stats').textContent = `${cards().length} cards · ${dueCount()} due`; }
+
+function renderEditor() {
+  const ed = $('editor'), c = cardById(selId);
+  if (!c) { ed.innerHTML = `<div class="empty">Select a card to edit, or add one.</div>`; return; }
+  const v = c.verify;
+  const vtype = v ? v.comparator : 'none';
+  ed.innerHTML = `
+    <h3>Edit card</h3>
+    <div class="field"><label>Front</label><textarea id="ed-front" rows="3">${esc(c.front)}</textarea><div class="imgrow" id="ed-frontimg"></div></div>
+    <div class="field"><label>Back</label><textarea id="ed-back" rows="3">${esc(c.back)}</textarea><div class="imgrow" id="ed-backimg"></div></div>
+    <div class="field"><label>Tags (comma-separated)</label><input type="text" id="ed-tags" value="${esc((c.tags || []).join(', '))}"></div>
+    <div class="field">
+      <label>Auto-check (optional)</label>
+      <select id="ed-vtype">
+        <option value="none"${vtype === 'none' ? ' selected' : ''}>No check (self-grade only)</option>
+        <option value="exact"${vtype === 'exact' ? ' selected' : ''}>Exact match</option>
+        <option value="coverage"${vtype === 'coverage' ? ' selected' : ''}>Keyword coverage</option>
+      </select>
+      <button id="ed-ai-kw" class="ghost" style="padding:2px 8px;margin-top:6px">✦ AI: keywords from the back</button>
+      <div id="ed-vparams"></div>
+    </div>
+    <div class="field">
+      <label>Card options</label>
+      <label class="status"><input type="checkbox" id="ed-both" ${c.both ? 'checked' : ''}> Also study reversed (back → front)</label>
+      <div id="ed-cloze-hint"></div>
+    </div>
+    <div class="field"><label>Notes (shown on reveal - e.g. a mnemonic)</label><textarea id="ed-notes" rows="2">${esc(c.notes || '')}</textarea></div>
+    <div class="field"><label>Scheduling</label>
+      <div class="status">fwd → ${esc(c.srs.state)} · ${c.srs.interval}d · ease ${c.srs.ease} · due ${esc(c.srs.due)}${c.both && c.srsRev ? `<br>rev → ${esc(c.srsRev.state)} · ${c.srsRev.interval}d · due ${esc(c.srsRev.due)}` : ''}</div>
+    </div>
+    <div class="row2">
+      <button id="ed-dup" class="ghost">Duplicate</button>
+      <button id="ed-reset" class="ghost">Reset progress</button>
+      <span class="spacer"></span>
+      <button id="ed-del" class="ghost danger">Delete</button>
+    </div>`;
+  renderVParams(c);
+  refreshClozeHint(c);
+  renderImgRow('front', c); renderImgRow('back', c);
+  // wire
+  $('ed-front').addEventListener('focus', () => { imgSide = 'front'; });
+  $('ed-back').addEventListener('focus', () => { imgSide = 'back'; });
+  $('ed-front').addEventListener('input', e => { c.front = e.target.value; markDirty(); renderList(); refreshClozeHint(c); });
+  $('ed-back').addEventListener('input', e => { c.back = e.target.value; markDirty(); });
+  $('ed-tags').addEventListener('input', e => { c.tags = e.target.value.split(',').map(s => s.trim()).filter(Boolean); markDirty(); renderList(); renderTagFilter(); });
+  $('ed-vtype').addEventListener('change', e => {
+    const t = e.target.value;
+    if (t === 'none') delete c.verify;
+    else if (t === 'exact') c.verify = LocalVerify.makeBlock('exact', { expected: c.back || '' });
+    else c.verify = LocalVerify.makeBlock('coverage', { required: [], threshold: 1 });
+    markDirty(); renderEditor(); renderList();
+  });
+  $('ed-both').addEventListener('change', e => { c.both = e.target.checked; if (c.both && !c.srsRev) c.srsRev = freshSrs(); markDirty(); renderEditor(); renderList(); renderStats(); });
+  $('ed-notes').addEventListener('input', e => { c.notes = e.target.value; markDirty(); });
+  $('ed-ai-kw').onclick = () => aiSuggestVerify(c);
+  $('ed-dup').addEventListener('click', () => { const copy = JSON.parse(JSON.stringify(c)); copy.id = LocalOffice.uuid(); copy.srs = freshSrs(); const i = cards().indexOf(c); cards().splice(i + 1, 0, copy); selId = copy.id; markDirty(); renderAll(); });
+  $('ed-reset').addEventListener('click', () => { c.srs = freshSrs(); markDirty(); renderEditor(); renderList(); renderStats(); });
+  $('ed-del').addEventListener('click', () => { const i = cards().indexOf(c); cards().splice(i, 1); selId = cards()[Math.max(0, i - 1)] ? cards()[Math.max(0, i - 1)].id : null; markDirty(); renderAll(); });
+}
+function renderVParams(c) {
+  const box = $('ed-vparams'); if (!c.verify) { box.innerHTML = ''; return; }
+  if (c.verify.comparator === 'exact') {
+    box.innerHTML = `<div class="row2" style="margin-top:8px">
+      <input type="text" id="vp-expected" style="flex:1" placeholder="Expected answer (defaults to back)" value="${esc(c.verify.params.expected || '')}">
+      <label class="status"><input type="checkbox" id="vp-case" ${c.verify.params.caseSensitive ? 'checked' : ''}> case-sensitive</label></div>`;
+    $('vp-expected').addEventListener('input', e => { c.verify.params.expected = e.target.value; markDirty(); });
+    $('vp-case').addEventListener('change', e => { c.verify.params.caseSensitive = e.target.checked; markDirty(); });
+  } else {
+    box.innerHTML = `<div style="margin-top:8px">
+      <input type="text" id="vp-req" style="width:100%" placeholder="Required keywords (comma-separated)" value="${esc((c.verify.params.required || []).join(', '))}">
+      <label class="status">threshold <input type="text" id="vp-thr" style="width:60px" value="${c.verify.params.threshold != null ? c.verify.params.threshold : 1}"> (0-1)</label></div>`;
+    $('vp-req').addEventListener('input', e => { c.verify.params.required = e.target.value.split(',').map(s => s.trim()).filter(Boolean); markDirty(); });
+    $('vp-thr').addEventListener('input', e => { const n = parseFloat(e.target.value); c.verify.params.threshold = isNaN(n) ? 1 : Math.max(0, Math.min(1, n)); markDirty(); });
+  }
+}
+// live cloze hint in the editor (updates as you type the front, without a full re-render)
+function refreshClozeHint(c) {
+  const box = $('ed-cloze-hint'); if (!box) return;
+  if (!isCloze(c.front)) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="status" style="margin-top:6px">Cloze: ${clozeAnswers(c.front).length} blank(s) - <button id="ed-cloze-verify" class="ghost" style="padding:2px 8px">use hidden words as the check</button></div>`;
+  $('ed-cloze-verify').onclick = () => { c.verify = LocalVerify.makeBlock('coverage', { required: clozeAnswers(c.front), threshold: 1 }); markDirty(); renderEditor(); renderList(); };
+}
+// image controls for one side (front/back), refreshed in place
+function renderImgRow(side, c) {
+  const box = $('ed-' + side + 'img'); if (!box) return;
+  const key = side + 'Img', has = !!c[key];
+  box.innerHTML = `<input type="file" id="imf-${side}" accept="image/*" style="font-size:12px;max-width:175px">` +
+    (has ? `<span class="imgthumb"><img src="${c[key]}"></span><button id="imc-${side}" class="ghost" style="padding:2px 8px">Remove</button><span class="status">${kb(c[key])} KB · metadata stripped</span>`
+         : `<span class="status">or drag / paste an image (paste lands on the side you're editing)</span>`);
+  $('imf-' + side).onchange = () => { const f = $('imf-' + side).files[0]; if (f) setCardImage(c, side, f); };
+  const rm = $('imc-' + side); if (rm) rm.onclick = () => { delete c[key]; markDirty(); renderEditor(); renderList(); };
+}
+
+// ── review ───────────────────────────────────────────────────────────
+// queue items are { card, dir } where dir is 'fwd' (front→back) or 'rev'.
+function startReview(dueOnly) {
+  const pool = allItems().filter(it => dueOnly ? isDue(it.card, it.dir) : true);
+  queue = pool.sort((a, b) => { const da = (srsGet(a.card, a.dir) || {}).due || today(), db = (srsGet(b.card, b.dir) || {}).due || today(); return da === db ? 0 : (da < db ? -1 : 1); });
+  qpos = 0; revealed = false; reviewedCount = 0; lastVResult = null;
+  renderReview();
+}
+function reveal() { revealed = true; renderReview(); }
+function gradeCurrent(grade) {
+  const it = queue[qpos]; if (!it) return;
+  schedule(it.card, grade, it.dir); markDirty(); reviewedCount++;
+  qpos++; revealed = false; lastVResult = null;
+  renderReview(); renderStats();
+}
+function checkTyped() {
+  const it = queue[qpos]; if (!it || it.dir !== 'fwd' || !it.card.verify) return;
+  const v = it.card.verify;
+  if (v.comparator === 'exact' && !v.params.expected) v.params.expected = it.card.back; // "defaults to the back"
+  lastVResult = LocalVerify.run(v, $('rev-answer').value);
+  revealed = true; renderReview();
+}
+function renderReview() {
+  const r = $('review');
+  if (!queue.length) { r.innerHTML = `<div class="rev-card"><div class="empty">Nothing due - you're caught up. 🎉<br><button id="rev-all" class="ghost" style="margin-top:10px">Review all cards</button></div></div>`; const b = $('rev-all'); if (b) b.onclick = () => startReview(false); return; }
+  if (qpos >= queue.length) {
+    r.innerHTML = `<div class="rev-card"><h3>Session complete</h3><p>Reviewed <b>${reviewedCount}</b> item${reviewedCount === 1 ? '' : 's'}.</p>
+      <div class="grade-row"><button class="primary" id="rev-again">Review again</button><button class="ghost" id="rev-back-manage">Back to manage</button></div></div>`;
+    $('rev-again').onclick = () => startReview(false);
+    $('rev-back-manage').onclick = () => switchView('manage');
+    return;
+  }
+  const it = queue[qpos], c = it.card, dir = it.dir;
+  const cloze = dir === 'fwd' && isCloze(c.front);
+  const frontHTML = cloze ? renderCloze(c.front, false) : esc(dir === 'fwd' ? c.front : c.back);
+  const answerHTML = cloze ? renderCloze(c.front, true) : esc(dir === 'fwd' ? c.back : c.front);
+  const frontImg = dir === 'fwd' ? c.frontImg : c.backImg;
+  const answerImg = dir === 'fwd' ? c.backImg : c.frontImg;
+  const hasTyped = dir === 'fwd' && c.verify;
+  let html = `<div class="rev-progress">${qpos + 1} / ${queue.length} &nbsp;·&nbsp; reviewed ${reviewedCount}${dir === 'rev' ? ' &nbsp;·&nbsp; ↔ reversed' : ''}` +
+    `<span class="zoomctl"><button id="cz-out" title="Zoom out">−</button><span id="cz-label">${Math.round(cardZoom * 100)}%</span><button id="cz-in" title="Zoom in">+</button></span></div>`;
+  html += `<div class="rev-card" style="${themeStyle(theme())}zoom:${cardZoom}">${frontImg ? `<img class="cardimg" src="${frontImg}" alt="">` : ''}<div class="rev-front">${frontHTML}</div>`;
+  if (hasTyped && !revealed) {
+    html += `<div class="typed"><input type="text" id="rev-answer" style="width:100%" placeholder="Type your answer, then Check (Enter)"></div>
+             <div class="grade-row" style="margin-top:10px"><button class="primary" id="rev-check">Check</button><button class="ghost" id="rev-show">Just show answer</button></div>`;
+  } else if (!revealed) {
+    html += `<div class="grade-row" style="margin-top:18px"><button class="primary" id="rev-show">Show answer (Space)</button></div>`;
+  }
+  if (revealed) {
+    html += `<div class="rev-divider"></div>${answerImg ? `<img class="cardimg" src="${answerImg}" alt="">` : ''}<div class="rev-back">${answerHTML}</div>`;
+    if (c.notes) html += `<div class="status" style="margin-top:10px;white-space:pre-wrap">📝 ${esc(c.notes)}</div>`;
+    if ((c.tags || []).length) html += `<div class="rev-tags">${c.tags.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>`;
+    if (lastVResult) {
+      const d = lastVResult.detail || {};
+      let extra = '';
+      if (c.verify && c.verify.comparator === 'coverage') extra = ` - hit: ${(d.hit || []).join(', ') || 'none'}${(d.missed || []).length ? '; missed: ' + d.missed.join(', ') : ''}`;
+      html += `<div class="vresult ${lastVResult.pass ? 'pass' : 'fail'}">${lastVResult.pass ? '✓ correct' : '✗ not a match'} (score ${Math.round(lastVResult.score * 100)}%)${esc(extra)}</div>`;
+    }
+    const srsCur = srsGet(c, dir) || {};
+    if ((srsCur.lapses || 0) >= 3 || (lastVResult && !lastVResult.pass)) {
+      html += `<div style="margin-top:10px"><button id="rev-mnemonic" class="ghost">✦ AI: mnemonic for this card</button></div>`;
+    }
+    html += `<div class="rev-divider"></div><div class="grade-row">
+        <button id="g1" class="danger">Again</button><button id="g2">Hard</button>
+        <button id="g3" class="primary">Good</button><button id="g4">Easy</button></div>
+      <div class="kbd-hint" style="margin-top:8px">Keys: 1 Again · 2 Hard · 3 Good · 4 Easy</div>`;
+  }
+  html += `</div>`;
+  r.innerHTML = html;
+  const showBtn = $('rev-show'); if (showBtn) showBtn.onclick = reveal;
+  const checkBtn = $('rev-check'); if (checkBtn) checkBtn.onclick = checkTyped;
+  const ans = $('rev-answer'); if (ans) { ans.focus(); ans.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); checkTyped(); } }); }
+  const mn = $('rev-mnemonic'); if (mn) mn.onclick = () => aiMnemonic(c);
+  const ci = $('cz-in'); if (ci) ci.onclick = () => setCardZoom(cardZoom + 0.1);
+  const co = $('cz-out'); if (co) co.onclick = () => setCardZoom(cardZoom - 0.1);
+  if (revealed) { ['g1', 'g2', 'g3', 'g4'].forEach((id, k) => { const b = $(id); if (b) b.onclick = () => gradeCurrent(k + 1); }); }
+}
+// ── study-card zoom ──
+let cardZoom = 1;
+function setCardZoom(z) { cardZoom = Math.max(0.6, Math.min(2.5, Math.round(z * 100) / 100)); renderReview(); }
+
+// ── import ───────────────────────────────────────────────────────────
+function parseImport(text) {
+  const out = [];
+  for (const raw of String(text).split('\n')) {
+    const line = raw.replace(/\r$/, ''); if (!line.trim()) continue;
+    const parts = line.indexOf('\t') !== -1 ? line.split('\t') : line.split(',');
+    const front = (parts[0] || '').trim(), back = (parts[1] || '').trim();
+    const tags = (parts.slice(2).join(',')).split(/[;|]/).map(s => s.trim()).filter(Boolean);
+    if (front || back) out.push(freshCard(front, back, tags));
+  }
+  return out;
+}
+function openImport() { $('import-text').value = ''; $('import-modal').classList.add('on'); $('import-text').focus(); }
+function closeImport() { $('import-modal').classList.remove('on'); }
+function doImport() {
+  const added = parseImport($('import-text').value);
+  if (!added.length) { setStatus('Nothing to import.'); return; }
+  cards().push(...added); markDirty(); closeImport();
+  if (!selId) selId = added[0].id;
+  renderAll(); setStatus(`Imported ${added.length} card${added.length === 1 ? '' : 's'}.`);
+}
+async function mergeDeckFile() {
+  try {
+    const res = await LocalOffice.openFile();
+    if (res.envelope.type !== 'flashcards') { setStatus('That file is not a flashcards deck.'); return; }
+    const incoming = (res.envelope.body.cards || []).map(c => { const d = JSON.parse(JSON.stringify(c)); d.id = LocalOffice.uuid(); if (!d.srs) d.srs = freshSrs(); if (!Array.isArray(d.tags)) d.tags = []; return d; });
+    cards().push(...incoming); markDirty(); closeImport(); renderAll();
+    setStatus(`Merged ${incoming.length} card${incoming.length === 1 ? '' : 's'} from ${res.name}.`);
+  } catch (e) { if (e && e.name !== 'AbortError') setStatus('Merge failed: ' + e.message); }
+}
+
+// ── export (TSV) ─────────────────────────────────────────────────────
+function deckToTSV() {
+  return cards().map(c => [String(c.front).replace(/[\t\n]/g, ' '), String(c.back).replace(/[\t\n]/g, ' '), (c.tags || []).join(';')].join('\t')).join('\n');
+}
+function exportTSV() {
+  if (!cards().length) { setStatus('No cards to export.'); return; }
+  const blob = new Blob([deckToTSV()], { type: 'text/tab-separated-values' }), url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = (LocalOffice.slugify(deck.body.deck.name) || 'deck') + '.tsv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 0);
+  const imgs = cards().filter(c => c.frontImg || c.backImg).length;
+  setStatus(`Exported ${cards().length} cards as TSV.${imgs ? ' (Images stay in the .json save, not TSV.)' : ''}`);
+}
+
+// ── review stats ─────────────────────────────────────────────────────
+function computeStats() {
+  const items = allItems();
+  const s = { total: cards().length, items: items.length, new: 0, due: 0, learning: 0, mature: 0, reps: 0, lapses: 0, leeches: [] };
+  const next7 = [0, 0, 0, 0, 0, 0, 0];
+  items.forEach(it => {
+    const srs = srsGet(it.card, it.dir) || freshSrs();
+    s.reps += srs.reps || 0; s.lapses += srs.lapses || 0;
+    if (srs.state === 'new') s.new++;
+    else if (srs.state === 'learning' || srs.state === 'relearning') s.learning++;
+    else if ((srs.interval || 0) >= 21) s.mature++;
+    if (isDue(it.card, it.dir)) s.due++;
+    for (let d = 0; d < 7; d++) if ((srs.due || today()) === addDays(today(), d)) next7[d]++;
+  });
+  cards().forEach(c => { const l = Math.max((c.srs && c.srs.lapses) || 0, (c.srsRev && c.srsRev.lapses) || 0); if (l >= 4) s.leeches.push({ front: c.front, lapses: l }); });
+  s.next7 = next7;
+  s.avgEase = items.length ? Math.round((items.reduce((a, it) => a + ((srsGet(it.card, it.dir) || {}).ease || 2.5), 0) / items.length) * 100) / 100 : 0;
+  return s;
+}
+function openStats() {
+  const s = computeStats(), max7 = Math.max(1, ...s.next7), labels = ['today', '+1', '+2', '+3', '+4', '+5', '+6'];
+  $('stats-body').innerHTML = `
+    <div class="stat-grid">
+      <div><div class="n">${s.total}</div><div class="l">cards (${s.items} review items)</div></div>
+      <div><div class="n">${s.due}</div><div class="l">due now</div></div>
+      <div><div class="n">${s.new}</div><div class="l">new</div></div>
+      <div><div class="n">${s.mature}</div><div class="l">mature (≥21d)</div></div>
+      <div><div class="n">${s.learning}</div><div class="l">learning</div></div>
+      <div><div class="n">${s.avgEase}</div><div class="l">avg ease</div></div>
+    </div>
+    <div class="l" style="margin-top:10px">Due over the next 7 days</div>
+    <div class="bar7">${s.next7.map(n => `<div style="height:${Math.round(n / max7 * 100)}%" title="${n}"></div>`).join('')}</div>
+    <div class="bar7-l">${labels.map(l => `<span>${l}</span>`).join('')}</div>
+    <div class="l" style="margin-top:12px">Reps: ${s.reps} · Lapses: ${s.lapses}</div>
+    ${s.leeches.length ? `<div class="l" style="margin-top:10px">⚠ Leeches (≥4 lapses):</div><ul style="margin:4px 0">${s.leeches.slice(0, 8).map(x => `<li>${esc(String(x.front).slice(0, 60))} <span class="status">(${x.lapses})</span></li>`).join('')}</ul>` : '<div class="l" style="margin-top:10px">No leeches yet. 👍</div>'}`;
+  $('stats-modal').classList.add('on');
+}
+function closeStats() { $('stats-modal').classList.remove('on'); }
+
+// ── card-type presets (Add ▾) - pre-wire the right deterministic check ──
+function addPreset(type) {
+  const c = freshCard();
+  if (type === 'cloze') { c.front = 'The {{answer}} goes here - edit me.'; c.verify = LocalVerify.makeBlock('coverage', { required: clozeAnswers(c.front), threshold: 1 }); }
+  else if (type === 'keyword') { c.verify = LocalVerify.makeBlock('coverage', { required: [], threshold: 1 }); }
+  else if (type === 'exact') { c.verify = LocalVerify.makeBlock('exact', { expected: '' }); }
+  else if (type === 'vocab') { c.both = true; c.srsRev = freshSrs(); }
+  cards().push(c); selId = c.id; markDirty(); renderAll();
+  const f = $('ed-front'); if (f) f.focus();
+}
+
+// ── deck templates (a feature demo + a few secular subject decks) ──────
+// Threshold in opts.coverage is a COUNT (e.g. 2 of 3); converted to a fraction.
+function mkCard(front, back, opts) {
+  opts = opts || {};
+  const c = freshCard(front, back, opts.tags || []);
+  if (opts.coverage) {
+    const req = opts.coverage, thr = opts.threshold != null ? opts.threshold : req.length;
+    const frac = thr > 1 ? Math.min(1, thr / req.length) : (thr > 0 ? thr : 1);
+    c.verify = LocalVerify.makeBlock('coverage', { required: req, threshold: frac });
+  } else if (opts.exact) { c.verify = LocalVerify.makeBlock('exact', { expected: back }); }
+  else if (isCloze(front)) { c.verify = LocalVerify.makeBlock('coverage', { required: clozeAnswers(front), threshold: 1 }); }
+  if (opts.both) { c.both = true; c.srsRev = freshSrs(); }
+  if (opts.notes) c.notes = opts.notes;
+  return c;
+}
+const DECK_TEMPLATES = {
+  demo: () => ({ name: 'localCards - feature demo', cards: [
+    mkCard('What is spaced repetition?', 'Reviewing material at increasing intervals to beat the forgetting curve.', { tags: ['demo'] }),
+    mkCard('The {{mitochondria}} is the powerhouse of the {{cell}}.', 'The mitochondria is the powerhouse of the cell.', { tags: ['demo', 'cloze'] }),
+    mkCard('Name the three terms of a PID controller.', 'Proportional, Integral, and Derivative.', { coverage: ['proportional', 'integral', 'derivative'], threshold: 2, tags: ['demo', 'keyword'] }),
+    mkCard('Capital of France', 'Paris', { exact: true, tags: ['demo', 'exact'] }),
+    mkCard('hola (Spanish)', 'hello', { both: true, tags: ['demo', 'vocab'] }),
+  ] }),
+  science: () => ({ name: 'Science basics', cards: [
+    mkCard('What does photosynthesis produce?', 'Plants convert light, water, and carbon dioxide into glucose and oxygen.', { coverage: ['glucose', 'oxygen', 'light'], threshold: 2, tags: ['science'] }),
+    mkCard('State Newton\'s second law.', 'Force equals mass times acceleration (F = ma).', { coverage: ['force', 'mass', 'acceleration'], threshold: 2, tags: ['science'] }),
+    mkCard('Why is the sky blue?', 'Shorter blue wavelengths scatter more than longer ones in the atmosphere (Rayleigh scattering).', { coverage: ['scatter', 'wavelength', 'blue'], threshold: 2, tags: ['science'] }),
+    mkCard('The {{mitochondria}} is the powerhouse of the {{cell}}.', 'The mitochondria is the powerhouse of the cell.', { tags: ['science'] }),
+    mkCard('What does DNA store?', 'Genetic information, encoded as a sequence of bases.', { coverage: ['genetic', 'information', 'bases'], threshold: 2, tags: ['science'] }),
+  ] }),
+  geography: () => ({ name: 'World geography', cards: [
+    mkCard('Capital of Japan', 'Tokyo', { exact: true, tags: ['geo'] }),
+    mkCard('Largest ocean on Earth', 'Pacific', { exact: true, tags: ['geo'] }),
+    mkCard('How many continents are there?', '7', { exact: true, tags: ['geo'] }),
+    mkCard('What forms a river delta?', 'Sediment a river deposits where it meets a slower body of water builds a fan-shaped landform.', { coverage: ['sediment', 'river'], threshold: 2, tags: ['geo'] }),
+    mkCard('Name the longest river in the world.', 'The Nile by most measures (the Amazon by some).', { coverage: ['nile'], threshold: 1, tags: ['geo'] }),
+  ] }),
+  lang: () => ({ name: 'Spanish starter (both-way)', cards: [
+    mkCard('hola', 'hello', { both: true, exact: true, tags: ['es'] }),
+    mkCard('gracias', 'thank you', { both: true, exact: true, tags: ['es'] }),
+    mkCard('por favor', 'please', { both: true, exact: true, tags: ['es'] }),
+    mkCard('agua', 'water', { both: true, exact: true, tags: ['es'] }),
+    mkCard('uno, dos, tres', 'one, two, three', { both: true, exact: true, tags: ['es'] }),
+  ] }),
+};
+function loadDeckTemplate(id) {
+  const build = DECK_TEMPLATES[id]; if (!build) return;
+  const t = build();
+  deck = LocalOffice.createEnvelope('flashcards', { title: t.name, app: APP_ID, body: { deck: { name: t.name }, scheduler: 'fsrs-lite', theme: defaultTheme(), cards: t.cards } });
+  handle = null; dirty = true; selId = t.cards[0] ? t.cards[0].id : null; tagFilter = '';
+  switchView('manage'); setStatus('Loaded sample deck: ' + t.name);
+}
+
+// ── view switching + render ──────────────────────────────────────────
+function switchView(v) {
+  view = v;
+  $('tab-manage').classList.toggle('on', v === 'manage');
+  $('tab-review').classList.toggle('on', v === 'review');
+  $('manage').style.display = v === 'manage' ? 'grid' : 'none';
+  $('review').style.display = v === 'review' ? 'flex' : 'none';
+  if (v === 'review') startReview(true); else renderAll();
+}
+function renderAll() {
+  $('deck-name').value = deck.body.deck.name || '';
+  $('deck-theme').value = theme().preset || 'midnight';
+  renderTagFilter(); renderList(); renderEditor(); renderStats();
+}
+
+// ── wiring ───────────────────────────────────────────────────────────
+$('btn-new').onclick = () => { if (!dirty || confirm('Discard unsaved changes?')) newDeck(); };
+$('btn-open').onclick = openDeck;
+$('btn-save').onclick = () => saveDeck(false);
+$('btn-saveas').onclick = () => saveDeck(true);
+$('btn-import').onclick = openImport;
+$('btn-add').onclick = () => { const c = freshCard(); cards().push(c); selId = c.id; markDirty(); renderAll(); $('ed-front') && $('ed-front').focus(); };
+$('add-preset').onchange = (e) => { const t = e.target.value; e.target.value = ''; if (t) addPreset(t); };
+$('deck-tpl').onchange = (e) => { const id = e.target.value; e.target.value = ''; if (id && (!dirty || confirm('Discard unsaved changes?'))) loadDeckTemplate(id); };
+$('deck-theme').onchange = (e) => { deck.body.theme = Object.assign({}, THEME_PRESETS[e.target.value] || THEME_PRESETS.midnight, { preset: e.target.value }); markDirty(); if (view === 'review') renderReview(); };
+function setMode(m) { document.documentElement.dataset.mode = (m === 'light' ? 'light' : 'dark'); try { localStorage.setItem('localcards-mode', document.documentElement.dataset.mode); } catch (e) {} $('btn-mode').textContent = document.documentElement.dataset.mode === 'light' ? '☀' : '☾'; }
+$('btn-mode').onclick = () => setMode(document.documentElement.dataset.mode === 'light' ? 'dark' : 'light');
+$('review').addEventListener('wheel', (e) => { if ((e.ctrlKey || e.metaKey) && view === 'review') { e.preventDefault(); setCardZoom(cardZoom + (e.deltaY < 0 ? 0.1 : -0.1)); } }, { passive: false });
+$('tab-manage').onclick = () => switchView('manage');
+$('tab-review').onclick = () => switchView('review');
+$('tag-filter').onchange = (e) => { tagFilter = e.target.value; renderList(); };
+$('deck-name').addEventListener('input', e => { deck.body.deck.name = e.target.value; markDirty(); });
+$('btn-export').onclick = exportTSV;
+$('btn-stats').onclick = openStats;
+$('stats-close').onclick = closeStats;
+$('stats-modal').addEventListener('click', e => { if (e.target === $('stats-modal')) closeStats(); });
+$('import-cancel').onclick = closeImport;
+$('import-do').onclick = doImport;
+$('import-merge-file').onclick = mergeDeckFile;
+$('import-modal').addEventListener('click', e => { if (e.target === $('import-modal')) closeImport(); });
+
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveDeck(false); return; }
+  if ($('import-modal').classList.contains('on')) { if (e.key === 'Escape') closeImport(); return; }
+  if ($('stats-modal').classList.contains('on')) { if (e.key === 'Escape') closeStats(); return; }
+  if (!$('ai-panel').classList.contains('hidden') && e.key === 'Escape') { AI.hide(); return; }
+  if (view === 'review' && (e.ctrlKey || e.metaKey) && ['=', '+', '-', '0'].includes(e.key)) {
+    e.preventDefault(); if (e.key === '0') setCardZoom(1); else setCardZoom(cardZoom + (e.key === '-' ? -0.1 : 0.1)); return;
+  }
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if (view !== 'review' || typing) return;
+  const it = queue[qpos];
+  if (!revealed && it && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); const hasTyped = it.dir === 'fwd' && it.card.verify; if (!hasTyped) reveal(); }
+  else if (revealed && ['1', '2', '3', '4'].includes(e.key)) { e.preventDefault(); gradeCurrent(+e.key); }
+});
+// paste an image onto the card you're editing (lands on the side you're in)
+document.addEventListener('paste', (e) => {
+  if (view !== 'manage' || $('import-modal').classList.contains('on') || !$('ai-panel').classList.contains('hidden')) return;
+  const c = cardById(selId); if (!c) return;
+  const items = e.clipboardData && e.clipboardData.items; if (!items) return;
+  for (const it of items) { if (it.type && it.type.indexOf('image') === 0) { const f = it.getAsFile(); if (f) { e.preventDefault(); setCardImage(c, imgSide, f); } return; } }
+});
+// drag an image file onto the editor
+$('editor').addEventListener('dragover', (e) => { e.preventDefault(); });
+$('editor').addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; const c = cardById(selId); if (f && c) setCardImage(c, imgSide, f); });
+
+window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ════════════════════════════════════════════════════════════════════
+   LOCAL AI (Ollama) - OPTIONAL, the ONLY network call, and AUTHORING ONLY.
+   The AI proposes cards / keyword checks / mnemonics; the deterministic verify
+   kernel always does the grading. AI never decides correctness. Off by default.
+   Every AI output is validated before it can touch the deck.
+   ════════════════════════════════════════════════════════════════════ */
+const DISTILL_SYSTEM_PROMPT =
+  `You are an expert tutor building a spaced-repetition flashcard deck from a technical text.
+Return STRICT JSON only: { "cards": [ ... ] } - no markdown, no prose.
+Each card MUST have: "front" (a question), "back" (a complete answer), and a "verify" block.
+The verify block MUST be {"comparator":"coverage","params":{"required":[2-5 mandatory keywords drawn from the back],"threshold":<minimum number of those keywords required to pass>}}.
+Keywords must be words/phrases that literally appear in the back. Keep cards concise and factual.`;
+const VERIFY_SYSTEM_PROMPT =
+  `You write the grading criteria (the "test") for one flashcard. The user gives the answer text.
+Return STRICT JSON only: {"required":[2-5 mandatory keywords that appear in the answer],"threshold":<min number required to pass>}.
+No markdown, no prose.`;
+const MNEMONIC_SYSTEM_PROMPT =
+  `You are a tutor helping a student remember one flashcard. Given its front and back, return STRICT JSON only:
+{"mnemonic":"a short analogy or memory hook, under 200 characters"}. No markdown, no prose.`;
+
+const AI = {
+  host: 'http://localhost:11434',
+  model: '', models: [], abort: null, pending: [],
+
+  async detect() {
+    setAiStatus('Detecting Ollama…');
+    try {
+      const res = await fetch(this.host + '/api/tags');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      this.models = ((await res.json()).models || []).map(m => m.name);
+      const sel = $('ai-model');
+      if (!this.models.length) { sel.innerHTML = '<option value="">(no models - run: ollama pull llama3.2)</option>'; setAiStatus('Ollama is running but has no models.'); return; }
+      sel.innerHTML = this.models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+      if (!this.model || !this.models.includes(this.model)) this.model = this.models[0];
+      sel.value = this.model;
+      setAiStatus(`Connected · ${this.models.length} model${this.models.length > 1 ? 's' : ''}.`);
+    } catch (e) {
+      $('ai-model').innerHTML = '<option value="">(Ollama not detected)</option>';
+      setAiStatus('Cannot reach Ollama. See OLLAMA_SETUP.md.', true);
+    }
+  },
+  async ensureModel() { if (this.model) return this.model; await this.detect(); return this.model; },
+
+  // Single non-streaming JSON call. format:'json' forces Ollama to return valid JSON.
+  async generateJSON(prompt, system, onTick) {
+    const model = await this.ensureModel();
+    if (!model) throw new Error('No Ollama model available.');
+    this.abort = new AbortController();
+    const t0 = Date.now(); const tick = setInterval(() => (onTick || setAiStatus)(`Thinking… ${((Date.now() - t0) / 1000).toFixed(1)}s`), 200);
+    try {
+      const res = await fetch(this.host + '/api/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, prompt, system, format: 'json', stream: false, options: { temperature: 0 } }),
+        signal: this.abort.signal
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      return JSON.parse(data.response);
+    } finally { clearInterval(tick); this.abort = null; }
+  },
+
+  async distill() {
+    const src = $('ai-source').value.trim();
+    if (!src) return setAiStatus('Paste some text first.', true);
+    const n = Math.max(1, Math.min(40, parseInt($('ai-count').value, 10) || 10));
+    $('ai-distill').classList.add('hidden'); $('ai-stop').classList.remove('hidden');
+    try {
+      const out = await this.generateJSON(`Create ${n} flashcards from this text:\n\n${src}`, DISTILL_SYSTEM_PROMPT);
+      const raw = (out && Array.isArray(out.cards)) ? out.cards : [];
+      this.pending = raw.map(sanitizeAICard).filter(Boolean);
+      renderDistillPreview();
+      setAiStatus(this.pending.length ? `Drafted ${this.pending.length} card(s) - review, then add.` : 'No usable cards returned.', !this.pending.length);
+    } catch (e) { setAiStatus(e.name === 'AbortError' ? 'Cancelled.' : ('Error: ' + e.message), true); }
+    finally { $('ai-distill').classList.remove('hidden'); $('ai-stop').classList.add('hidden'); }
+  },
+
+  show() { $('ai-panel').classList.remove('hidden'); this.detect(); },
+  hide() { $('ai-panel').classList.add('hidden'); }
+};
+
+function setAiStatus(msg, err) { const s = $('ai-status'); s.textContent = msg; s.classList.toggle('err', !!err); }
+
+// Convert one AI-proposed card into a validated card (or null). Coverage
+// threshold may come back as a COUNT (e.g. 3 of 4) → normalized to a fraction.
+function coverageFromAI(required, rawThreshold) {
+  const req = (Array.isArray(required) ? required : []).map(s => String(s).trim()).filter(Boolean).slice(0, 8);
+  if (!req.length) return null;
+  const thr = Number(rawThreshold);
+  let frac = 1;
+  if (thr > 1) frac = Math.min(1, thr / req.length);
+  else if (thr > 0 && thr <= 1) frac = thr;
+  return LocalVerify.makeBlock('coverage', { required: req, threshold: frac });
+}
+function sanitizeAICard(o) {
+  if (!o || typeof o !== 'object') return null;
+  const front = String(o.front || '').trim(), back = String(o.back || '').trim();
+  if (!front || !back) return null;
+  const card = freshCard(front, back, []);
+  if (o.verify && o.verify.comparator === 'coverage' && o.verify.params) {
+    const v = coverageFromAI(o.verify.params.required, o.verify.params.threshold);
+    if (v) card.verify = v;
+  }
+  return card;
+}
+function renderDistillPreview() {
+  const box = $('ai-preview'), p = AI.pending || [];
+  if (!p.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="ai-row" style="margin-top:6px"><b>${p.length} drafted</b><span class="spacer"></span><button id="ai-add" class="primary">Add all to deck</button></div>` +
+    p.map(c => `<div class="ai-card"><div class="front">${esc(c.front)}</div><div class="status">${esc(String(c.back).slice(0, 90))}${c.verify ? ' · ✓ ' + esc(c.verify.params.required.join(', ')) : ''}</div></div>`).join('');
+  $('ai-add').onclick = () => { cards().push(...p); const n = p.length; AI.pending = []; box.innerHTML = ''; markDirty(); renderAll(); setAiStatus(`Added ${n} card(s).`); };
+}
+
+// Editor: AI proposes the coverage keywords; the user reviews/edits; kernel grades.
+async function aiSuggestVerify(c) {
+  if (!c.back || !c.back.trim()) { setStatus('Add a back/answer first, then AI can suggest keywords.'); return; }
+  try {
+    const out = await AI.generateJSON(`Answer text:\n${c.back}`, VERIFY_SYSTEM_PROMPT, m => setStatus(m));
+    const v = coverageFromAI(out && out.required, out && out.threshold);
+    if (!v) { setStatus('AI returned no usable keywords.'); return; }
+    c.verify = v; markDirty(); renderEditor(); renderList();
+    setStatus(`AI suggested ${v.params.required.length} keywords - review & edit, the kernel grades.`);
+  } catch (e) { setStatus(e.name === 'AbortError' ? 'Cancelled.' : ('AI keyword suggestion failed: ' + e.message)); }
+}
+// Review: AI proposes a mnemonic for a struggling card → appended to its notes.
+async function aiMnemonic(c) {
+  try {
+    setStatus('Asking AI for a mnemonic…');
+    const out = await AI.generateJSON(`Front: ${c.front}\nBack: ${c.back}`, MNEMONIC_SYSTEM_PROMPT, m => setStatus(m));
+    const mn = String((out && out.mnemonic) || '').trim();
+    if (!mn) { setStatus('No mnemonic returned.'); return; }
+    c.notes = (c.notes ? c.notes + '\n' : '') + '💡 ' + mn; markDirty();
+    if (view === 'review') renderReview(); else renderEditor();
+    setStatus('Mnemonic added to the card notes.');
+  } catch (e) { setStatus(e.name === 'AbortError' ? 'Cancelled.' : ('Mnemonic failed: ' + e.message)); }
+}
+
+$('btn-ai').onclick = () => AI.show();
+$('ai-close').onclick = () => AI.hide();
+$('ai-model').onchange = (e) => { AI.model = e.target.value; };
+$('ai-distill').onclick = () => AI.distill();
+$('ai-stop').onclick = () => { if (AI.abort) AI.abort.abort(); };
+window.AI = AI; // handle for tests/console; doesn't change the UX
+
+// ── embed: opened inside the LocalOffice Hub (postMessage handoff) ────
+function applyOpenedCards(env, h) {
+  if (env.type !== 'flashcards') throw new Error('Not a flashcards file ("' + env.type + '")');
+  deck = env;
+  if (!deck.body.deck) deck.body.deck = { name: '' };
+  if (!deck.body.scheduler) deck.body.scheduler = 'fsrs-lite';
+  if (!deck.body.theme) deck.body.theme = defaultTheme();
+  if (!Array.isArray(deck.body.cards)) deck.body.cards = [];
+  deck.body.cards.forEach(c => { if (!c.srs) c.srs = freshSrs(); if (!Array.isArray(c.tags)) c.tags = []; });
+  handle = h || null; dirty = false; selId = cards()[0] ? cards()[0].id : null; tagFilter = '';
+  switchView('manage');
+}
+window.addEventListener('message', async (e) => {
+  const m = e.data; if (!m || m.proto !== 'localoffice') return;
+  if (m.type === 'open-handle') { if (m.handle) handle = m.handle; return; } // best-effort: enables in-place save when same-origin/hosted
+  if (m.type !== 'open') return;
+  try {
+    let t = m.text, h = m.handle || null;
+    if (h && t == null) t = await (await h.getFile()).text();
+    applyOpenedCards(LocalOffice.parse(t).envelope, h);
+    (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: true }, '*');
+  } catch (err) { (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: false, error: String(err && err.message || err) }, '*'); }
+});
+// ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
+const JsonPanel = (function () {
+  'use strict';
+  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  function build() {
+    const s = document.createElement('style');
+    s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
+    document.head.appendChild(s);
+    host = document.createElement('div'); host.id = 'jp';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    document.body.appendChild(host);
+    ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
+    const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
+    on('x', hide);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
+    on('apply', apply);
+    host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
+    document.addEventListener('keydown', e => { if (host.classList.contains('on') && e.key === 'Escape') hide(); });
+  }
+  function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
+  function hide() { host.classList.remove('on'); }
+  function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
+  async function apply() {
+    try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
+    catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
+  }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function init(h) {
+    hooks = h; if (!host) build();
+    const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
+    const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
+    if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
+    else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
+    btn.addEventListener('click', open);
+  }
+  return { init, open };
+})();
+JsonPanel.init({ getText: () => LocalOffice.stringify(deck), applyText: (t) => applyOpenedCards(LocalOffice.parse(t).envelope, handle) });
+
+if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localCards' }, '*');
+
+// boot
+setMode((() => { try { return localStorage.getItem('localcards-mode') || 'dark'; } catch (e) { return 'dark'; } })());
+newDeck();
+if (!LocalOffice.supportsFS()) setStatus('Heads up: this browser uses download/upload (no in-place save).');
+</script>
+</body>
+</html>

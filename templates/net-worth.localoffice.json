@@ -1,0 +1,184 @@
+{
+  "format": "localoffice/v1",
+  "type": "sheet",
+  "meta": {
+    "id": "tpl-net-worth",
+    "title": "Net-worth tracker",
+    "created": "2026-06-14T00:00:00.000Z",
+    "modified": "2026-06-14T00:00:00.000Z",
+    "app": "localsheets@1.2",
+    "tags": [
+      "template",
+      "finance"
+    ]
+  },
+  "body": {
+    "sheets": [
+      {
+        "name": "Net worth",
+        "frozen": {
+          "rows": 0,
+          "cols": 0
+        },
+        "cells": {
+          "A1": {
+            "v": "Net-worth tracker",
+            "format": {
+              "bold": true
+            }
+          },
+          "A3": {
+            "v": "Assets",
+            "format": {
+              "bold": true
+            }
+          },
+          "A4": {
+            "v": "Cash & savings"
+          },
+          "B4": {
+            "v": "5000",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A5": {
+            "v": "Investments"
+          },
+          "B5": {
+            "v": "25000",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A6": {
+            "v": "Retirement"
+          },
+          "B6": {
+            "v": "40000",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A7": {
+            "v": "Property"
+          },
+          "B7": {
+            "v": "300000",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A8": {
+            "v": "Vehicle"
+          },
+          "B8": {
+            "v": "15000",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A9": {
+            "v": "Total assets",
+            "format": {
+              "bold": true
+            }
+          },
+          "B9": {
+            "f": "=SUM(B4:B8)",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A11": {
+            "v": "Liabilities",
+            "format": {
+              "bold": true
+            }
+          },
+          "A12": {
+            "v": "Mortgage"
+          },
+          "B12": {
+            "v": "220000",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A13": {
+            "v": "Car loan"
+          },
+          "B13": {
+            "v": "8000",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A14": {
+            "v": "Credit cards"
+          },
+          "B14": {
+            "v": "1500",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A15": {
+            "v": "Student loans"
+          },
+          "B15": {
+            "v": "12000",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A16": {
+            "v": "Total liabilities",
+            "format": {
+              "bold": true
+            }
+          },
+          "B16": {
+            "f": "=SUM(B12:B15)",
+            "format": {
+              "numfmt": "currency"
+            }
+          },
+          "A18": {
+            "v": "Net worth",
+            "format": {
+              "bold": true
+            }
+          },
+          "B18": {
+            "f": "=B9-B16",
+            "format": {
+              "numfmt": "currency"
+            }
+          }
+        },
+        "cols": {
+          "A": {
+            "w": 180
+          },
+          "B": {
+            "w": 130
+          }
+        },
+        "rows": {}
+      }
+    ]
+  },
+  "view": {
+    "active": 0,
+    "selections": [
+      {
+        "r": 0,
+        "c": 0
+      }
+    ],
+    "settings": {
+      "theme": "auto"
+    }
+  }
+}

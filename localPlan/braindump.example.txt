@@ -1,0 +1,32 @@
+# Example brain dump for braindump.py
+# Lines starting with # are ignored. Blank lines too.
+#
+# Format:
+#   track: item text
+#   track: item text (priority)
+#   track: item text [Soon]
+#   track: item text -- optional note after double-dash
+#   track > Section Name: item text
+#
+# Standard horizons (case-insensitive): Now, Soon, Later, Someday
+# Default if no [tag] given: Now
+
+home: plan meals for the week (priority)
+home: grocery run -- check what's already in the pantry first
+home: deep clean the kitchen [Soon]
+home: paint the spare bedroom [Later]
+
+family: schedule pediatrician appointment -- youngest needs flu shot
+family: parent-teacher conference (priority)
+family > Now: pickup roster for soccer Saturday
+
+self: book annual physical [Soon]
+self: reach out to college friend (priority)
+self: read 30 minutes a day -- start with the book on the nightstand
+
+wellness: daily journaling (priority)
+wellness: exercise 20 minutes [Now]
+wellness: plan a new habit [Later]
+
+career: prep for quarterly review [Soon] -- need numbers from H1
+career: networking lunch this month

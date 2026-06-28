@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<!-- ════════════════════════════════════════════════════════════════════
+     localCheck - a LocalOffice tool (body type: runbook)
+     An interactive SOP / QA runbook. Steps capture a typed value, and the
+     shared verification kernel (exact / coverage / tolerance - all
+     DETERMINISTIC, never an LLM) gates pass/fail. You cannot sign off the file
+     if the math says a value is out of bounds. The verification thesis, as a
+     product. Single file · no dependencies · offline · MIT.
+     ════════════════════════════════════════════════════════════════════ -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#fafaf7" />
+<title>localCheck</title>
+<style>
+  :root {
+    --bg:#fafaf7; --surface:#fff; --surface-2:#f4f3ee; --ink:#1a1a17; --ink-2:#5a5a55;
+    --ink-3:#8a8a83; --border:rgba(0,0,0,.08); --border-strong:rgba(0,0,0,.14);
+    --accent:#5a4a2f; --accent-soft:#f0e9d8; --ok:#2f7d3a; --ok-soft:#e6f3e8; --bad:#a4332f; --bad-soft:#f7e7e6;
+    --radius:10px; --radius-sm:6px; --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.05); color-scheme: light;
+  }
+  body.dark {
+    --bg:#1a1a17; --surface:#242420; --surface-2:#2c2c27; --ink:#f0ede6; --ink-2:#b5b1a8; --ink-3:#807c73;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.16); --accent:#c4a265; --accent-soft:#3a3320;
+    --ok:#5fbf6e; --ok-soft:#23371f; --bad:#e08a86; --bad-soft:#3a2422; color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg);
+         color: var(--ink); display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+  .toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface);
+             border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .toolbar input.title { font: inherit; font-weight: 600; font-size: 15px; color: var(--ink); background: transparent;
+             border: 1px solid transparent; border-radius: var(--radius-sm); padding: 5px 8px; min-width: 150px; flex: 0 1 240px; }
+  .toolbar input.title:hover { border-color: var(--border); }
+  .toolbar input.title:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+  .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+  .spacer { flex: 1; }
+  button { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong);
+           border-radius: var(--radius-sm); padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.icon { padding: 6px 9px; }
+  select, input[type=text], input[type=number], textarea { font: inherit; font-size: 13px; color: var(--ink);
+           background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 5px 8px; }
+  #status { font-size: 12px; color: var(--ink-2); margin-left: 8px; }
+
+  main { flex: 1; overflow: auto; padding: 22px; }
+  .wrap { max-width: 820px; margin: 0 auto; }
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+          padding: 12px 14px; margin-bottom: 10px; display: flex; gap: 12px; align-items: flex-start; }
+  .step .n { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 6px; min-width: 22px; }
+  .step .body { flex: 1; min-width: 0; }
+  .step .text { width: 100%; border: 1px solid transparent; background: transparent; font-size: 15px; padding: 5px 6px; border-radius: var(--radius-sm); }
+  .step .text:hover { border-color: var(--border); } .step .text:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+  .row label { font-size: 12px; color: var(--ink-2); }
+  .row input[type=number] { width: 92px; } .row input.val { width: 130px; } .row input.exp { width: 200px; }
+  .badge { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 10px; }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); } .badge.bad { background: var(--bad-soft); color: var(--bad); }
+  .badge.pend { background: var(--surface-2); color: var(--ink-3); }
+  .step .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--ink-3); }
+  .step .rm { background: none; border: none; color: var(--ink-3); cursor: pointer; font-size: 15px; padding: 4px 6px; }
+  .step .rm:hover { color: var(--bad); }
+  .chk { width: 18px; height: 18px; margin-top: 6px; cursor: pointer; }
+  .step.diag-hidden { opacity: .5; border-style: dashed; }
+  .step.diag-trig { border-left: 3px solid var(--accent); background: var(--accent-soft); }
+  .diag-tog { font-size: 11px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .diag-tog input { width: 13px; height: 13px; cursor: pointer; }
+  .tag { font-size: 11px; border-radius: 999px; padding: 1px 8px; }
+  .tag.hid { background: var(--surface-2); color: var(--ink-3); }
+  .tag.trig { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  .row select.br-goto { max-width: 260px; }
+  .row .usb-read, .row .usb-cfg { padding: 4px 9px; font-size: 12px; }
+  .ser-tag { font-size: 11px; color: var(--ink-3); }
+  textarea.note { width: 100%; min-height: 48px; resize: vertical; margin-top: 6px; }
+
+  .signbar { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border);
+             padding: 12px 22px; display: flex; align-items: center; gap: 14px; }
+  .signbar .summary { font-size: 14px; flex: 1; }
+  .signbar .summary b { color: var(--ink); }
+  .signbar.ready .summary { color: var(--ok); } .signbar.blocked .summary { color: var(--bad); }
+  .signbar.tampered { background: var(--bad-soft); border-top-color: var(--bad); }
+  .signed-stamp { font-weight: 700; color: var(--ok); }
+  .tamper-stamp { font-weight: 800; color: var(--bad); }
+  .empty { text-align: center; color: var(--ink-2); padding: 8vh 0; }
+  .empty h1 { color: var(--ink); font-size: 20px; margin-bottom: 8px; }
+  @media print { .toolbar, .signbar .actions { display: none !important; } }
+</style>
+</head>
+<body class="light">
+
+<div class="toolbar ui">
+  <input id="title" class="title" placeholder="Untitled runbook" aria-label="Title" />
+  <div class="sep"></div>
+  <button onclick="newCheck()">New</button>
+  <button onclick="openCheck()">Open</button>
+  <button onclick="saveCheck()" title="Save (Ctrl+S)">Save</button>
+  <button onclick="saveCheckAs()">Save As</button>
+  <select id="tpl" onchange="loadTemplate(this.value); this.selectedIndex=0;" title="Start from a template">
+    <option value="">Templates…</option>
+    <option value="equip">Equipment readiness</option>
+    <option value="deploy">Deployment checklist</option>
+  </select>
+  <div class="sep"></div>
+  <button onclick="addStep('check')">+ Check</button>
+  <button onclick="addStep('measure')">+ Measure</button>
+  <button onclick="addStep('note')">+ Note</button>
+  <div class="spacer"></div>
+  <span id="status"></span>
+  <div class="sep"></div>
+  <button class="icon" id="theme-btn" onclick="toggleTheme()" title="Light / dark">☾</button>
+</div>
+
+<main><div class="wrap" id="steps"></div></main>
+
+<div class="signbar" id="signbar">
+  <span class="summary" id="summary"></span>
+  <span class="actions"><button class="primary" id="sign-btn" onclick="signOff()">Sign &amp; seal</button></span>
+</div>
+
+<script>
+// ── shared verification kernel (inlined; exact + coverage + tolerance) ─
+const LocalVerify = (function () {
+  'use strict';
+  const COMPARATORS = ['exact', 'coverage', 'tolerance'];
+  function normalize(s, p = {}) { let o = String(s == null ? '' : s); if (p.trim !== false) o = o.trim(); if (p.collapseWhitespace !== false) o = o.replace(/\s+/g, ' '); if (!p.caseSensitive) o = o.toLowerCase(); if (p.stripPunctuation) o = o.replace(/[.,;:!?'"()\[\]{}]/g, ''); return o; }
+  function exact(actual, p = {}) { const exp = normalize(p.expected, p); if (p.expected == null || exp === '') return { pass: false, score: 0, detail: { expected: p.expected == null ? '' : String(p.expected), got: String(actual == null ? '' : actual), reason: 'no expected value' } }; const pass = normalize(actual, p) === exp; return { pass, score: pass ? 1 : 0, detail: { expected: String(p.expected), got: String(actual == null ? '' : actual) } }; }
+  function coverage(actual, p = {}) { const req = Array.isArray(p.required) ? p.required : []; const hay = normalize(actual, p); const hit = [], missed = []; for (const kw of req) { const n = normalize(kw, p); if (n && hay.indexOf(n) !== -1) hit.push(kw); else missed.push(kw); } const total = req.length, score = total ? hit.length / total : 0, th = (typeof p.threshold === 'number' && p.threshold > 0) ? Math.min(p.threshold, 1) : 1; return { pass: total > 0 && score >= th, score, detail: { hit, missed, threshold: th } }; }
+  function toNum(v) { if (typeof v === 'number') return v; const m = String(v == null ? '' : v).match(/-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?/); return m ? parseFloat(m[0]) : NaN; }
+  function tolerance(actual, p = {}) {
+    const a = toNum(actual);
+    if (Number.isNaN(a)) return { pass: false, score: 0, detail: { reason: 'no numeric value', got: String(actual == null ? '' : actual) } };
+    let lo, hi, basis;
+    if (p.min != null || p.max != null) { lo = p.min != null ? p.min : -Infinity; hi = p.max != null ? p.max : Infinity; basis = 'range'; }
+    else if (p.expected != null) { const abs = p.abs != null ? p.abs : 0, rel = p.rel != null ? Math.abs(p.expected) * p.rel : 0, t = Math.max(abs, rel); lo = p.expected - t; hi = p.expected + t; basis = 'expected'; }
+    else return { pass: false, score: 0, detail: { reason: 'needs min/max or expected' } };
+    const pass = a >= lo && a <= hi;
+    return { pass, score: pass ? 1 : 0, detail: { actual: a, lo, hi, basis } };
+  }
+  const FNS = { exact, coverage, tolerance };
+  function isSupported(c) { return COMPARATORS.indexOf(c) !== -1; }
+  function run(block, actual, opts = {}) { if (!block || !isSupported(block.comparator)) throw new Error('verify: unsupported comparator'); const r = FNS[block.comparator](actual, block.params || {}); if (opts.mutate !== false) block.result = r; return r; }
+  return { COMPARATORS, normalize, exact, coverage, tolerance, toNum, run, isSupported };
+})();
+
+// ── shared LocalOffice core (inlined; embed-aware IO) ─────────────────
+const LocalOffice = (function () {
+  'use strict';
+  const FORMAT = 'localoffice/v1', FORMAT_PREFIX = 'localoffice/', FILE_EXT = '.localoffice.json';
+  const TYPES = ['sheet', 'plan', 'flashcards', 'mindmap', 'slides', 'image', 'runbook', 'doc'];
+  function nowISO() { return new Date().toISOString(); }
+  function uuid() {
+    const c = (typeof crypto !== 'undefined') ? crypto : null;
+    if (c && typeof c.randomUUID === 'function') { try { return c.randomUUID(); } catch (_) {} }
+    let rnd; if (c && typeof c.getRandomValues === 'function') { const b = new Uint8Array(16); c.getRandomValues(b); b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80; rnd = (i) => b[i]; } else { const a = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256)); a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80; rnd = (i) => a[i]; }
+    const h = []; for (let i = 0; i < 16; i++) h.push((rnd(i) + 0x100).toString(16).slice(1));
+    return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+  }
+  function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function freshBody(type) { return type === 'runbook' ? { steps: [] } : {}; }
+  function createEnvelope(type, opts = {}) { if (!TYPES.includes(type)) throw new Error('createEnvelope: unknown type "' + type + '"'); const ts = nowISO(); return { format: FORMAT, type, meta: { id: opts.id || uuid(), title: opts.title || '', created: ts, modified: ts, app: opts.app || '', tags: Array.isArray(opts.tags) ? opts.tags.slice() : [] }, body: isPlainObject(opts.body) ? opts.body : freshBody(type) }; }
+  function validate(obj) { const e = [], w = []; if (!isPlainObject(obj)) return { ok: false, errors: ['Not a JSON object.'], warnings: w, type: null }; if (typeof obj.format !== 'string') e.push('Missing "format".'); else if (!obj.format.startsWith(FORMAT_PREFIX)) e.push('Unrecognized format.'); if (typeof obj.type !== 'string' || !obj.type) e.push('Missing "type".'); else if (!TYPES.includes(obj.type)) w.push('Unknown type.'); if (!isPlainObject(obj.meta)) e.push('Missing "meta".'); if (!isPlainObject(obj.body)) w.push('Missing "body".'); return { ok: e.length === 0, errors: e, warnings: w, type: typeof obj.type === 'string' ? obj.type : null }; }
+  function normalize(obj) { if (!isPlainObject(obj.meta)) obj.meta = {}; const m = obj.meta; if (typeof m.id !== 'string' || !m.id) m.id = uuid(); if (typeof m.title !== 'string') m.title = ''; if (typeof m.created !== 'string') m.created = nowISO(); if (typeof m.modified !== 'string') m.modified = m.created; if (typeof m.app !== 'string') m.app = ''; if (!Array.isArray(m.tags)) m.tags = []; if (!isPlainObject(obj.body)) obj.body = freshBody(obj.type); return obj; }
+  class LoadError extends Error { constructor(m, d) { super(m); this.name = 'LoadError'; this.detail = d; } }
+  function parse(text, opts = {}) { let raw; try { raw = JSON.parse(text); } catch (e) { throw new LoadError('File is not valid JSON.', e.message); } let r = validate(raw), obj = raw; if (!r.ok && typeof opts.coerce === 'function') { const c = opts.coerce(raw); if (isPlainObject(c)) { obj = c; r = validate(obj); } } if (!r.ok) throw new LoadError('Not a LocalOffice file: ' + r.errors.join(' '), r.errors); normalize(obj); return { envelope: obj, warnings: r.warnings }; }
+  function stringify(env, pretty = true) { return JSON.stringify(env, null, pretty ? 2 : 0); }
+  function serialize(env, opts = {}) { if (!isPlainObject(env)) throw new Error('serialize: not an object'); const r = validate(env); if (!r.ok) throw new Error('serialize: invalid - ' + r.errors.join(' ')); if (opts.touch !== false) { if (!isPlainObject(env.meta)) env.meta = {}; env.meta.modified = nowISO(); } return stringify(env, opts.pretty !== false); }
+  function slugify(s) { return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); }
+  function suggestedName(env) { return (slugify(env && env.meta && env.meta.title) || (env && env.type) || 'untitled') + FILE_EXT; }
+  function supportsFS() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; }
+  const PICKER_TYPES = [{ description: 'LocalOffice file', accept: { 'application/json': ['.json'] } }];
+  function pickFileFallback() { return new Promise((res, rej) => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json'; i.style.display = 'none'; i.addEventListener('change', () => { const f = i.files && i.files[0]; i.remove(); f ? res(f) : rej(new Error('No file selected.')); }); document.body.appendChild(i); i.click(); }); }
+  function isEmbedded() { return typeof window !== 'undefined' && window.parent && window.parent !== window; }
+  function hubSave(text, name, asNew) { return new Promise((resolve, reject) => { const id = 'lo' + Math.random().toString(36).slice(2); function on(e) { const m = e.data; if (!m || m.proto !== 'localoffice' || m.type !== 'saved' || m.id !== id) return; window.removeEventListener('message', on); if (m.ok) resolve({ handle: null, name: m.name || name }); else if (m.error === 'cancelled') { const a = new Error('cancelled'); a.name = 'AbortError'; reject(a); } else reject(new Error(m.error || 'Save failed')); } window.addEventListener('message', on); window.parent.postMessage({ proto: 'localoffice', type: 'save', id, text, name, asNew: !!asNew }, '*'); }); }
+  async function openFile(opts = {}) { if (supportsFS()) { try { const [h] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false }); const f = await h.getFile(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: h, name: f.name, warnings }; } catch (e) { if (e && e.name === 'AbortError') throw e; } } const f = await pickFileFallback(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: null, name: f.name, warnings }; }
+  async function saveFile(env, handle, opts = {}) { const text = serialize(env, opts); if (isEmbedded()) return hubSave(text, suggestedName(env), false); if (handle && typeof handle.createWritable === 'function') { const w = await handle.createWritable(); await w.write(text); await w.close(); return { handle, name: handle.name }; } return saveFileAs(env, suggestedName(env), { ...opts, _text: text }); }
+  async function saveFileAs(env, suggested, opts = {}) { const text = opts._text != null ? opts._text : serialize(env, opts); const name = suggested || suggestedName(env); if (isEmbedded()) return hubSave(text, name, true); if (supportsFS()) { const h = await window.showSaveFilePicker({ suggestedName: name, types: PICKER_TYPES }); const w = await h.createWritable(); await w.write(text); await w.close(); return { handle: h, name: h.name }; } download(text, name); return { handle: null, name }; }
+  function download(text, filename) { const b = new Blob([text], { type: 'application/json' }), u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || ('untitled' + FILE_EXT); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 0); }
+  return { FORMAT, FILE_EXT, TYPES, uuid, createEnvelope, validate, normalize, parse, stringify, serialize, slugify, suggestedName, LoadError, supportsFS, openFile, saveFile, saveFileAs, download };
+})();
+
+// ════════════════════════════════════════════════════════════════════
+// localCheck - state + logic
+// ════════════════════════════════════════════════════════════════════
+const APP = 'localcheck@1.0';
+const THEME_KEY = 'localcheck_theme';
+let data = { steps: [] };     // body: { steps:[ {id, kind, text, ...} ] }
+let title = 'Untitled runbook';
+let fileHandle = null;
+let signed = false;
+let sealState = null;   // null | 'intact' | 'tampered' | 'unknown' (sealed-but-unverifiable)
+
+const $ = id => document.getElementById(id);
+function uid() { return 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function setStatus(m) { $('status').textContent = m || ''; }
+function markDirty() { signed = false; if (data && data.seal) { data.seal = null; sealState = null; } }   // any edit voids the seal
+
+// ── evaluation (pure; the deterministic gate) ─────────────────────────
+function evalMeasure(step) {
+  if (step.value == null || step.value === '') return null;        // pending
+  try { return LocalVerify.run({ comparator: step.comparator, params: step.params || {} }, step.value, { mutate: false }); }
+  catch (e) { return { pass: false, score: 0, detail: { reason: e.message } }; }
+}
+function stepPasses(step) {
+  if (step.kind === 'check') return !!step.done;
+  if (step.kind === 'measure') { const r = evalMeasure(step); return !!(r && r.pass); }
+  return true; // notes never block
+}
+// ── conditional branching (state-machine runbook) ────────────────────
+// A step flagged `diagnostic:true` is HIDDEN until something branches to it.
+// A measure step with `ifFailGoto:<id>` reveals the diagnostic block starting
+// at that id when (and only when) the measure FAILS. Revealing is deterministic
+// - it's a function of the same kernel verdicts, never an LLM.
+function diagBlockIds(targetId) {                 // target + following contiguous diagnostic steps
+  const ids = [], idx = data.steps.findIndex(s => s.id === targetId);
+  if (idx === -1) return ids;
+  for (let i = idx; i < data.steps.length; i++) { if (!data.steps[i].diagnostic) break; ids.push(data.steps[i].id); }
+  return ids;
+}
+function revealedSet() {
+  const set = new Set();
+  for (const s of data.steps) {
+    if (s.kind === 'measure' && s.ifFailGoto) { const r = evalMeasure(s); if (r && r.pass === false) diagBlockIds(s.ifFailGoto).forEach(id => set.add(id)); }
+  }
+  return set;
+}
+function isActive(step, rev) { return step.diagnostic ? rev.has(step.id) : true; }   // hidden diagnostics are inert
+function gatingSteps() { const rev = revealedSet(); return data.steps.filter(s => (s.kind === 'check' || s.kind === 'measure') && isActive(s, rev)); }
+function passingCount() { return gatingSteps().filter(stepPasses).length; }
+function canSignOff() { const g = gatingSteps(); return g.length > 0 && g.every(stepPasses); }
+
+// ── step ops ──────────────────────────────────────────────────────────
+function addStep(kind) {
+  const step = { id: uid(), kind, text: '' };
+  if (kind === 'check') step.done = false;
+  else if (kind === 'measure') { step.comparator = 'tolerance'; step.params = { min: null, max: null }; step.value = ''; }
+  else if (kind === 'note') step.note = '';
+  data.steps.push(step); markDirty(); render(); focusStep(step.id);
+}
+function removeStep(id) { data.steps = data.steps.filter(s => s.id !== id); markDirty(); render(); }
+function byId(id) { return data.steps.find(s => s.id === id); }
+function focusStep(id) { const el = document.querySelector('.step[data-id="' + id + '"] .text'); if (el) el.focus(); }
+
+// ── render ────────────────────────────────────────────────────────────
+function specSummary(step) {
+  const p = step.params || {};
+  if (step.comparator === 'tolerance') {
+    if (p.min != null && p.max != null) return p.min + ' - ' + p.max;
+    if (p.min != null) return '≥ ' + p.min; if (p.max != null) return '≤ ' + p.max;
+    if (p.expected != null) return p.expected + (p.abs != null ? ' ± ' + p.abs : (p.rel != null ? ' ± ' + (p.rel * 100) + '%' : ''));
+    return '(set a spec)';
+  }
+  if (step.comparator === 'exact') return 'must equal "' + (p.expected || '') + '"';
+  if (step.comparator === 'coverage') return 'must mention: ' + ((p.required || []).join(', ') || '(none)');
+  return '';
+}
+function badgeFor(step) {
+  if (step.kind === 'check') return step.done ? '<span class="badge ok">done</span>' : '<span class="badge pend">to do</span>';
+  if (step.kind === 'measure') { const r = evalMeasure(step); if (!r) return '<span class="badge pend">-</span>'; return r.pass ? '<span class="badge ok">PASS</span>' : '<span class="badge bad">FAIL</span>'; }
+  return '';
+}
+function render() {
+  $('title').value = title;
+  const host = $('steps');
+  if (!data.steps.length) { host.innerHTML = '<div class="empty"><h1>Build a runbook</h1><p>Add <b>Check</b> steps (tick to confirm), <b>Measure</b> steps (a typed value the kernel gates by exact / coverage / <b>tolerance</b>), and <b>Note</b> steps. You can\'t sign off until every gating step passes. Mark a step <b>diagnostic</b> to hide it until a Measure step branches to it on failure.</p></div>'; renderSignbar(); return; }
+  host.innerHTML = '';
+  const rev = revealedSet();
+  data.steps.forEach((step, i) => host.appendChild(makeStep(step, i + 1, rev)));
+  renderSignbar();
+}
+function makeStep(step, n, rev) {
+  const el = document.createElement('div'); el.className = 'step'; el.dataset.id = step.id;
+  const revealed = !!(rev && rev.has(step.id));
+  if (step.diagnostic) el.classList.add(revealed ? 'diag-trig' : 'diag-hidden');
+  const diagTag = step.diagnostic ? (revealed ? '<span class="tag trig">▶ triggered</span>' : '<span class="tag hid">hidden until triggered</span>') : '';
+  let mid = '';
+  if (step.kind === 'check') mid = '<input type="checkbox" class="chk" ' + (step.done ? 'checked' : '') + '>';
+  el.innerHTML =
+    '<div class="n">' + n + '</div>' +
+    (step.kind === 'check' ? mid : '') +
+    '<div class="body">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="kind">' + step.kind + '</span><span class="bdg">' + badgeFor(step) + '</span>' +
+        '<label class="diag-tog" title="Hide until a step branches here on failure"><input type="checkbox" class="diag-chk"' + (step.diagnostic ? ' checked' : '') + '> diagnostic</label>' + diagTag + '</div>' +
+      '<input class="text" type="text" value="' + esc(step.text) + '" placeholder="' + (step.kind === 'measure' ? 'What to measure (e.g. Baseline NPU voltage)' : step.kind === 'check' ? 'What to confirm' : 'Note') + '">' +
+      (step.kind === 'measure' ? measureRow(step) : '') +
+      (step.kind === 'note' ? '<textarea class="note" placeholder="Notes…">' + esc(step.note || '') + '</textarea>' : '') +
+    '</div>' +
+    '<button class="rm" title="Remove">✕</button>';
+  wireStep(el, step);
+  return el;
+}
+function measureRow(step) {
+  const p = step.params || {}, c = step.comparator;
+  const opt = (v, l) => '<option value="' + v + '"' + (c === v ? ' selected' : '') + '>' + l + '</option>';
+  let spec = '';
+  if (c === 'tolerance') spec = '<label>min</label><input type="number" step="any" class="sp-min" value="' + (p.min != null ? p.min : '') + '"><label>max</label><input type="number" step="any" class="sp-max" value="' + (p.max != null ? p.max : '') + '">';
+  else if (c === 'exact') spec = '<label>equals</label><input type="text" class="exp sp-exp" value="' + esc(p.expected || '') + '">';
+  else if (c === 'coverage') spec = '<label>must mention</label><input type="text" class="exp sp-req" placeholder="comma,separated" value="' + esc((p.required || []).join(', ')) + '">';
+  return '<div class="row"><select class="sp-cmp">' + opt('tolerance', 'tolerance') + opt('exact', 'exact') + opt('coverage', 'coverage') + '</select>' + spec +
+    ' <span style="color:var(--ink-3);font-size:12px">spec: ' + esc(specSummary(step)) + '</span></div>' +
+    '<div class="row"><label>value</label><input class="val" type="text" value="' + esc(step.value || '') + '" placeholder="typed reading">' +
+      '<button class="usb-read" type="button" title="Read a value from a USB instrument (Chrome/Edge)">Read USB</button>' +
+      '<button class="usb-cfg" type="button" title="Serial settings: baud + match pattern">⚙</button>' +
+      (step.serial && (step.serial.baud || step.serial.pattern) ? '<span class="ser-tag">' + esc((step.serial.baud || 9600) + ' baud' + (step.serial.pattern ? ' · /' + step.serial.pattern + '/' : '')) + '</span>' : '') +
+    '</div>' +
+    branchRow(step);
+}
+function branchRow(step) {
+  const diags = data.steps.filter(s => s.diagnostic);
+  const num = id => { const i = data.steps.findIndex(s => s.id === id); return i === -1 ? '?' : (i + 1); };
+  const opts = ['<option value="">(stop on fail)</option>'].concat(diags.map(d =>
+    '<option value="' + d.id + '"' + (step.ifFailGoto === d.id ? ' selected' : '') + '>Step ' + num(d.id) + ': ' + (esc((d.text || '').slice(0, 30)) || '(diagnostic)') + '</option>'));
+  return '<div class="row"><label>on fail →</label><select class="br-goto">' + opts.join('') + '</select>' +
+    (diags.length ? '' : ' <span style="color:var(--ink-3);font-size:11px">mark a later step “diagnostic” to branch to it</span>') + '</div>';
+}
+function wireStep(el, step) {
+  el.querySelector('.rm').addEventListener('click', () => removeStep(step.id));
+  el.querySelector('.text').addEventListener('change', e => { step.text = e.target.value; markDirty(); });
+  const chk = el.querySelector('.chk'); if (chk) chk.addEventListener('change', e => { step.done = e.target.checked; markDirty(); render(); });
+  const note = el.querySelector('.note'); if (note) note.addEventListener('change', e => { step.note = e.target.value; markDirty(); });
+  const diag = el.querySelector('.diag-chk'); if (diag) diag.addEventListener('change', e => { step.diagnostic = e.target.checked; if (!step.diagnostic) data.steps.forEach(s => { if (s.ifFailGoto === step.id) s.ifFailGoto = null; }); markDirty(); render(); });
+  if (step.kind === 'measure') {
+    el.querySelector('.sp-cmp').addEventListener('change', e => { step.comparator = e.target.value; step.params = e.target.value === 'coverage' ? { required: [] } : {}; markDirty(); render(); });
+    const min = el.querySelector('.sp-min'); if (min) min.addEventListener('change', e => { step.params.min = e.target.value === '' ? null : parseFloat(e.target.value); markDirty(); render(); });
+    const max = el.querySelector('.sp-max'); if (max) max.addEventListener('change', e => { step.params.max = e.target.value === '' ? null : parseFloat(e.target.value); markDirty(); render(); });
+    const exp = el.querySelector('.sp-exp'); if (exp) exp.addEventListener('change', e => { step.params.expected = e.target.value; markDirty(); render(); });
+    const req = el.querySelector('.sp-req'); if (req) req.addEventListener('change', e => { step.params.required = e.target.value.split(',').map(s => s.trim()).filter(Boolean); markDirty(); render(); });
+    const val = el.querySelector('.val'); if (val) { val.addEventListener('input', e => { step.value = e.target.value; markDirty(); el.querySelector('.bdg').innerHTML = badgeFor(step); renderSignbar(); }); val.addEventListener('change', () => { if (step.ifFailGoto) render(); }); }
+    const usb = el.querySelector('.usb-read'); if (usb) usb.addEventListener('click', () => readSerialInto(step));
+    const cfg = el.querySelector('.usb-cfg'); if (cfg) cfg.addEventListener('click', () => configSerial(step));
+    const goto_ = el.querySelector('.br-goto'); if (goto_) goto_.addEventListener('change', e => { step.ifFailGoto = e.target.value || null; markDirty(); render(); });
+  }
+}
+function renderSignbar() {
+  const bar = $('signbar'), g = gatingSteps(), pass = passingCount(), ready = canSignOff();
+  bar.classList.toggle('ready', ready && !signed && sealState !== 'tampered');
+  bar.classList.toggle('blocked', g.length > 0 && !ready && sealState !== 'tampered');
+  bar.classList.toggle('tampered', sealState === 'tampered');
+  const sum = $('summary');
+  if (sealState === 'tampered') sum.innerHTML = '<span class="tamper-stamp">⚠ Integrity check FAILED</span> - content changed since it was signed ' + esc(sealDate(data.seal && data.seal.signed)) + '. Treat this file as untrusted.';
+  else if (signed && sealState === 'intact') sum.innerHTML = '<span class="signed-stamp">✓ Signed &amp; sealed</span> - SHA-256 verified intact · signed ' + esc(sealDate(data.seal && data.seal.signed)) + '.';
+  else if (signed) sum.innerHTML = '<span class="signed-stamp">✓ Signed off</span> - all ' + g.length + ' gating step(s) pass <span style="color:var(--ink-3)">(unsealed - seal needs Chrome/Edge or https/localhost)</span>.';
+  else if (sealState === 'unknown') sum.innerHTML = 'This file is <b>sealed</b>, but this browser can\'t verify the seal (needs Chrome/Edge or https/localhost).';
+  else if (g.length === 0) sum.innerHTML = 'Add a Check or Measure step to gate sign-off.';
+  else sum.innerHTML = '<b>' + pass + ' / ' + g.length + '</b> gating step(s) pass - ' + (ready ? 'ready to sign &amp; seal.' : '<b>cannot sign off</b> until all pass.');
+  $('sign-btn').disabled = !ready || signed;
+}
+
+// ── integrity seal - SHA-256 over the runbook content ─────────────────
+// Honest framing: this is TAMPER-EVIDENT, not unforgeable. The hash is keyless,
+// so anyone who edits a value can recompute it. It catches honest mistakes and
+// naive after-the-fact edits ("changed a FAIL to a PASS in a text editor"); it
+// is NOT a cryptographic signature and proves no authorship. Deterministic
+// (SHA-256), so the determinism rule still holds.
+const SUBTLE = (typeof crypto !== 'undefined' && crypto.subtle) ? crypto.subtle : null;
+function canSeal() { return !!SUBTLE; }
+function stableStringify(v) {
+  if (v === null || v === undefined || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
+  if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
+  return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + stableStringify(v[k])).join(',') + '}';
+}
+function sealPayload(signedISO) {                                   // never includes the seal itself
+  const steps = data.steps.map(s => { const c = {}; for (const k in s) if (k !== 'seal') c[k] = s[k]; return c; });
+  return stableStringify({ title: title, steps: steps, signed: signedISO });
+}
+async function sha256Hex(str) { const buf = await SUBTLE.digest('SHA-256', new TextEncoder().encode(str)); return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''); }
+function sealDate(iso) { if (!iso) return ''; try { return new Date(iso).toLocaleString(); } catch (e) { return String(iso); } }
+async function verifySeal() {                                       // run on load; sets sealState + signed
+  const seal = data && data.seal;
+  if (!seal || !seal.hash) { sealState = null; signed = false; renderSignbar(); return; }
+  if (!canSeal()) { sealState = 'unknown'; signed = false; renderSignbar(); return; }
+  const hash = await sha256Hex(sealPayload(seal.signed));
+  if (hash === seal.hash) { sealState = 'intact'; signed = true; setStatus('Integrity verified - content matches the seal signed ' + sealDate(seal.signed) + '.'); }
+  else { sealState = 'tampered'; signed = false; setStatus('⚠ INTEGRITY FAILURE - content changed since it was signed ' + sealDate(seal.signed) + '.'); }
+  renderSignbar();
+}
+async function signOff() {
+  if (!canSignOff()) return;
+  const signedISO = new Date().toISOString();
+  if (!canSeal()) { data.seal = null; signed = true; sealState = null; renderSignbar(); setStatus('Signed off - integrity seal unavailable here (needs Chrome/Edge or https/localhost).'); return; }
+  const hash = await sha256Hex(sealPayload(signedISO));
+  data.seal = { algo: 'sha-256', signed: signedISO, hash: hash, scope: 'title+steps' };
+  signed = true; sealState = 'intact';
+  renderSignbar(); setStatus('Signed & sealed (SHA-256) - save to persist. Any later edit voids the seal.');
+}
+
+// ── Web Serial read - optional value capture from a USB instrument ────
+// Chrome/Edge only (needs navigator.serial + a user gesture + secure context);
+// there is no device in CI, so the connect/read flow is a manual-test path. The
+// PARSE is pure and unit-tested (extractReading): the reading still flows through
+// the same deterministic kernel - Web Serial only types the value for you.
+function extractReading(text, pattern) {
+  const s = String(text == null ? '' : text);
+  if (pattern) { try { const m = s.match(new RegExp(pattern)); if (m) return m[1] != null ? m[1] : m[0]; } catch (e) {} return ''; }
+  const m = s.match(/-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?/);
+  return m ? m[0] : '';
+}
+function serialSupported() { return typeof navigator !== 'undefined' && 'serial' in navigator; }
+async function readLine(port, timeoutMs) {
+  const reader = port.readable.getReader(), dec = new TextDecoder();
+  let buf = '', timer = null;
+  const timeout = new Promise(res => { timer = setTimeout(() => res({ _timeout: true }), timeoutMs); });
+  try {
+    while (true) {
+      const r = await Promise.race([reader.read(), timeout]);
+      if (r._timeout || r.done) break;
+      if (r.value) { buf += dec.decode(r.value, { stream: true }); if (/[\r\n]/.test(buf)) break; }
+    }
+  } finally { clearTimeout(timer); try { reader.releaseLock(); } catch (e) {} }
+  return buf;
+}
+async function readSerialInto(step) {
+  if (!serialSupported()) { setStatus('Web Serial isn\'t available here - use Chrome/Edge over https/localhost, or type the value.'); return; }
+  let port = null;
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: (step.serial && step.serial.baud) || 9600 });
+    const text = await readLine(port, 3000);
+    const reading = extractReading(text, step.serial && step.serial.pattern);
+    if (reading === '') { setStatus('No numeric reading found in the instrument output.'); return; }
+    step.value = reading; markDirty(); render();
+    setStatus('Read "' + reading + '" from USB - kernel verdict updated.');
+  } catch (e) {
+    if (e && (e.name === 'NotFoundError' || e.name === 'AbortError')) return;   // user cancelled the port picker
+    setStatus('Serial read failed: ' + (e && e.message || e));
+  } finally { if (port) try { await port.close(); } catch (e) {} }
+}
+function configSerial(step) {
+  const baud = prompt('Baud rate:', (step.serial && step.serial.baud) || 9600); if (baud === null) return;
+  const pattern = prompt('Match pattern (regex; first capture group = the reading). Blank = first number found:', (step.serial && step.serial.pattern) || ''); if (pattern === null) return;
+  const s = {}, b = parseInt(baud, 10); if (b > 0) s.baud = b; if (pattern.trim()) s.pattern = pattern.trim();
+  step.serial = (s.baud || s.pattern) ? s : undefined; markDirty(); render(); setStatus('Serial settings saved.');
+}
+
+// ── templates (neutral / engineering-generic) ─────────────────────────
+const TEMPLATES = {
+  equip: { title: 'Equipment readiness', steps: [
+    { kind: 'check', text: 'Unit visually inspected, no damage', done: false },
+    { kind: 'measure', text: 'Ambient temperature (C)', comparator: 'tolerance', params: { min: 18, max: 24 }, value: '' },
+    { kind: 'measure', text: 'Calibration reading', comparator: 'tolerance', params: { expected: 100, abs: 2 }, value: '', gotoRef: 'cal_diag' },
+    { kind: 'note', text: 'Calibration diagnostics', note: 'Shown only when the reading is out of spec: recalibrate against the reference, then re-measure above.', diagnostic: true, ref: 'cal_diag' },
+    { kind: 'check', text: 'Recalibrated against the reference', done: false, diagnostic: true },
+    { kind: 'measure', text: 'Self-test log mentions', comparator: 'coverage', params: { required: ['ready', 'ok'] }, value: '' },
+    { kind: 'note', text: 'Observations', note: '' },
+  ] },
+  deploy: { title: 'Deployment checklist', steps: [
+    { kind: 'check', text: 'Backups verified', done: false },
+    { kind: 'check', text: 'Rollback plan written', done: false },
+    { kind: 'measure', text: 'Smoke-test latency (ms)', comparator: 'tolerance', params: { max: 200 }, value: '' },
+    { kind: 'measure', text: 'Release tag', comparator: 'exact', params: { expected: 'v1.0.0' }, value: '' },
+  ] },
+};
+function loadTemplate(key) {
+  if (!key || !TEMPLATES[key]) return;
+  if (data.steps.length && !confirm('Replace the current runbook with the "' + TEMPLATES[key].title + '" template?')) return;
+  const t = TEMPLATES[key];
+  const steps = t.steps.map(s => ({ id: uid(), ...JSON.parse(JSON.stringify(s)) }));
+  const byRef = {}; steps.forEach(s => { if (s.ref) byRef[s.ref] = s.id; });   // resolve template-local branch refs → real ids
+  steps.forEach(s => { if (s.gotoRef) s.ifFailGoto = byRef[s.gotoRef] || null; delete s.gotoRef; delete s.ref; });
+  data = { steps };
+  title = t.title; fileHandle = null; signed = false; sealState = null; render(); setStatus('Loaded template: ' + t.title);
+}
+
+// ── envelope IO ───────────────────────────────────────────────────────
+function exportData() { return LocalOffice.createEnvelope('runbook', { title: title || 'Untitled runbook', app: APP, body: data }); }
+function importData(env) { data = env.body; if (!Array.isArray(data.steps)) data.steps = []; data.steps.forEach(s => { if (!s.id) s.id = uid(); }); title = (env.meta && env.meta.title) || 'Untitled runbook'; signed = false; sealState = null; }
+async function applyOpened(env) { if (env.type !== 'runbook') throw new Error('Not a runbook file ("' + env.type + '")'); importData(env); render(); await verifySeal(); }
+function newCheck() { if (data.steps.length && !confirm('Start a new runbook?')) return; data = { steps: [] }; title = 'Untitled runbook'; fileHandle = null; signed = false; render(); setStatus('New'); }
+async function openCheck() {
+  try { const res = await LocalOffice.openFile(); if (res.envelope.type !== 'runbook') { setStatus('That is a "' + res.envelope.type + '" file, not a runbook.'); return; } importData(res.envelope); fileHandle = res.handle; render(); setStatus('Opened ' + res.name); await verifySeal(); }
+  catch (e) { if (e && e.name !== 'AbortError') setStatus('Open failed: ' + e.message); }
+}
+async function saveCheck() { try { const res = await LocalOffice.saveFile(exportData(), fileHandle); fileHandle = res.handle; setStatus('Saved' + (res.name ? ' · ' + res.name : '')); } catch (e) { if (e && e.name !== 'AbortError') setStatus('Save failed: ' + e.message); } }
+async function saveCheckAs() { try { const env = exportData(); const res = await LocalOffice.saveFileAs(env, LocalOffice.suggestedName(env)); fileHandle = res.handle; setStatus('Saved · ' + res.name); } catch (e) { if (e && e.name !== 'AbortError') setStatus('Save failed: ' + e.message); } }
+
+$('title').addEventListener('input', e => { title = e.target.value || 'Untitled runbook'; markDirty(); renderSignbar(); });
+
+// ── theme ─────────────────────────────────────────────────────────────
+function applyTheme() { let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) {} const isDark = s === 'dark' || (s === null && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); $('theme-btn').textContent = isDark ? '☀' : '☾'; const mc = document.querySelector('meta[name="theme-color"]'); if (mc) mc.content = isDark ? '#1a1a17' : '#fafaf7'; }
+function toggleTheme() { const d = document.body.classList.contains('dark'); try { localStorage.setItem(THEME_KEY, d ? 'light' : 'dark'); } catch (e) {} applyTheme(); }
+window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) {} if (s === null) applyTheme(); });
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveCheck(); } });
+
+// ── embed: opened inside the LocalOffice Hub ──────────────────────────
+window.addEventListener('message', async e => {
+  const m = e.data; if (!m || m.proto !== 'localoffice') return;
+  if (m.type === 'open-handle') { if (m.handle) fileHandle = m.handle; return; }
+  if (m.type !== 'open') return;
+  try { let t = m.text, h = m.handle || null; if (h && t == null) t = await (await h.getFile()).text(); await applyOpened(LocalOffice.parse(t).envelope); if (h) fileHandle = h; (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: true }, '*'); }
+  catch (err) { (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: false, error: String(err && err.message || err) }, '*'); }
+});
+
+// ── boot ──────────────────────────────────────────────────────────────
+applyTheme();
+render();
+// ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
+const JsonPanel = (function () {
+  'use strict';
+  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  function build() {
+    const s = document.createElement('style');
+    s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
+    document.head.appendChild(s);
+    host = document.createElement('div'); host.id = 'jp';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    document.body.appendChild(host);
+    ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
+    const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
+    on('x', hide);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
+    on('apply', apply);
+    host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
+    document.addEventListener('keydown', e => { if (host.classList.contains('on') && e.key === 'Escape') hide(); });
+  }
+  function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
+  function hide() { host.classList.remove('on'); }
+  function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
+  async function apply() {
+    try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
+    catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
+  }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function init(h) {
+    hooks = h; if (!host) build();
+    const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
+    const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
+    if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
+    else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
+    btn.addEventListener('click', open);
+  }
+  return { init, open };
+})();
+JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpened(LocalOffice.parse(t).envelope) });
+
+if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localCheck' }, '*');
+</script>
+</body>
+</html>

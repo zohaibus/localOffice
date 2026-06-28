@@ -1,0 +1,100 @@
+{
+  "format": "localoffice/v1",
+  "type": "plan",
+  "meta": {
+    "id": "tpl-pm-plan",
+    "title": "Project plan (PM)",
+    "created": "2026-06-14T00:00:00.000Z",
+    "modified": "2026-06-14T00:00:00.000Z",
+    "app": "localplan@1.0",
+    "tags": [
+      "template",
+      "pm"
+    ]
+  },
+  "body": {
+    "planTitle": "Project plan (PM)",
+    "planSubtitle": "Phases, priorities, and what comes next.",
+    "tracks": [
+      {
+        "id": "proj",
+        "icon": "P",
+        "title": "Project",
+        "open": true,
+        "sections": [
+          {
+            "name": "Discovery",
+            "horizon": "now",
+            "items": [
+              {
+                "id": "d1",
+                "text": "Requirements & scope",
+                "priority": true
+              },
+              {
+                "id": "d2",
+                "text": "Stakeholder interviews"
+              }
+            ]
+          },
+          {
+            "name": "Design",
+            "horizon": "soon",
+            "items": [
+              {
+                "id": "de1",
+                "text": "Architecture & approach"
+              },
+              {
+                "id": "de2",
+                "text": "Design review & sign-off"
+              }
+            ]
+          },
+          {
+            "name": "Build",
+            "horizon": "soon",
+            "items": [
+              {
+                "id": "b1",
+                "text": "Core implementation"
+              },
+              {
+                "id": "b2",
+                "text": "Integration"
+              }
+            ]
+          },
+          {
+            "name": "Test",
+            "horizon": "later",
+            "items": [
+              {
+                "id": "q1",
+                "text": "QA & bug fixes"
+              },
+              {
+                "id": "q2",
+                "text": "User acceptance testing"
+              }
+            ]
+          },
+          {
+            "name": "Launch",
+            "horizon": "later",
+            "items": [
+              {
+                "id": "l1",
+                "text": "Release"
+              },
+              {
+                "id": "l2",
+                "text": "Retrospective"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<!-- ════════════════════════════════════════════════════════════════════
+     localDoc - a LocalOffice tool (body type: doc)
+     A block-based writer with two modes (body.docMode):
+       - Compliance (default): each block can carry mandatory keywords; a
+         COMPLIANCE LINTER (the deterministic `coverage` kernel - never an LLM)
+         blocks Markdown export until every required block contains its keywords.
+       - Prose: a WYSIWYG word processor - type and see formatting live, a word
+         count, export always open.
+     Edited as WYSIWYG (contentEditable) by default, with a Source toggle for raw
+     Markdown; the body is always saved as Markdown via an inlined HTML<->Markdown
+     layer. Optional local-Ollama AI can *route* pasted text into blocks; it never
+     decides compliance. Single file · no dependencies · offline · MIT.
+     ════════════════════════════════════════════════════════════════════ -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#fafaf7" />
+<title>localDoc</title>
+<style>
+  :root {
+    --bg:#fafaf7; --surface:#fff; --surface-2:#f4f3ee; --ink:#1a1a17; --ink-2:#5a5a55; --ink-3:#8a8a83;
+    --border:rgba(0,0,0,.08); --border-strong:rgba(0,0,0,.14); --accent:#5a4a2f; --accent-soft:#f0e9d8;
+    --ok:#2f7d3a; --ok-soft:#e6f3e8; --bad:#a4332f; --bad-soft:#f7e7e6; --radius:10px; --radius-sm:6px;
+    --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.05); --shadow-lg:0 10px 40px rgba(0,0,0,.12); color-scheme: light;
+  }
+  body.dark {
+    --bg:#1a1a17; --surface:#242420; --surface-2:#2c2c27; --ink:#f0ede6; --ink-2:#b5b1a8; --ink-3:#807c73;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.16); --accent:#c4a265; --accent-soft:#3a3320;
+    --ok:#5fbf6e; --ok-soft:#23371f; --bad:#e08a86; --bad-soft:#3a2422; color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }   /* `hidden` must beat our display rules */
+  html, body { height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg);
+         color: var(--ink); display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+  .toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface);
+             border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .toolbar input.title { font: inherit; font-weight: 600; font-size: 15px; color: var(--ink); background: transparent;
+             border: 1px solid transparent; border-radius: var(--radius-sm); padding: 5px 8px; min-width: 150px; flex: 0 1 240px; }
+  .toolbar input.title:hover { border-color: var(--border); }
+  .toolbar input.title:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+  .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+  .spacer { flex: 1; }
+  button { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong);
+           border-radius: var(--radius-sm); padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: var(--accent); } button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  button.icon { padding: 6px 9px; }
+  select, input[type=text], textarea { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg);
+           border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 6px 9px; }
+  #status { font-size: 12px; color: var(--ink-2); margin-left: 8px; }
+
+  main { flex: 1; overflow: auto; padding: 22px; }
+  .wrap { max-width: 820px; margin: 0 auto; }
+  .block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+           padding: 12px 14px; margin-bottom: 12px; }
+  .block .head { display: flex; align-items: center; gap: 8px; }
+  .block .heading { flex: 1; font-weight: 700; font-size: 16px; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: var(--radius-sm); }
+  .block .heading:hover { border-color: var(--border); } .block .heading:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+  .block .ops { display: flex; gap: 2px; } .block .ops button { padding: 3px 7px; font-size: 12px; color: var(--ink-3); border-color: transparent; background: none; }
+  .block .ops button:hover { color: var(--accent); }
+  .block textarea { width: 100%; min-height: 90px; resize: vertical; margin-top: 6px; line-height: 1.55; }
+  .req { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--ink-2); }
+  .req input { flex: 1; font-size: 12px; }
+  .req .badge { font-weight: 700; border-radius: 999px; padding: 2px 9px; font-size: 11px; }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); } .badge.bad { background: var(--bad-soft); color: var(--bad); }
+  .empty { text-align: center; color: var(--ink-2); padding: 8vh 0; } .empty h1 { color: var(--ink); font-size: 20px; margin-bottom: 8px; }
+
+  .lintbar { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border);
+             padding: 12px 22px; display: flex; align-items: center; gap: 14px; }
+  .lintbar .summary { flex: 1; font-size: 14px; } .lintbar.ready .summary { color: var(--ok); } .lintbar.blocked .summary { color: var(--bad); }
+  .lintbar .summary b { color: var(--ink); }
+
+  /* AI drawer */
+  #ai-panel { position: fixed; top: 0; right: 0; width: 360px; max-width: 92vw; height: 100%; background: var(--surface);
+              border-left: 1px solid var(--border); box-shadow: var(--shadow-lg); z-index: 1200; display: flex; flex-direction: column; }
+  #ai-panel.hidden, #ai-panel .hidden { display: none; }
+  .ai-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .ai-head .status { flex: 1; font-size: 12px; color: var(--ink-2); } #ai-status.err { color: var(--bad); }
+  .ai-body { padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .ai-body label { font-size: 12px; color: var(--ink-2); } .ai-body select, .ai-body textarea { width: 100%; margin-top: 4px; }
+  .ai-body textarea { min-height: 120px; resize: vertical; }
+  .ai-fence { font-size: 12px; line-height: 1.5; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; }
+  .ai-fence b { color: var(--ink); }
+  #ai-preview { font-size: 12px; white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; max-height: 34vh; overflow: auto; }
+  .ai-body button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+  /* prose mode: no compliance scaffolding */
+  body.prose .req, body.prose .bdg { display: none; }
+
+  /* document typography (set per-doc via body.style; applied to editor + preview) */
+  #blocks { --doc-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; --doc-size: 15px; --doc-color: var(--ink); }
+  .block textarea { font-family: var(--doc-font); font-size: var(--doc-size); color: var(--doc-color); }
+  .block .heading { font-family: var(--doc-font); color: var(--doc-color); }
+  .preview { font-family: var(--doc-font); font-size: var(--doc-size); color: var(--doc-color); }
+
+  /* formatting bar (selection-aware): Markdown buttons + size / font / color */
+  .fmtbar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--surface);
+            border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .fmtbar .fb { font-size: 13px; padding: 5px 9px; min-width: 30px; line-height: 1; }
+  .fmtbar select { font-size: 12px; padding: 4px 7px; }
+  .fmt-hint { font-size: 11px; color: var(--ink-3); margin-left: 2px; }
+  .fmt-colors { display: inline-flex; gap: 6px; }
+  .swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; padding: 0; }
+  .swatch.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .swatch.def { background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--ink-2); }
+
+  /* rendered content - shared by the live WYSIWYG editor (.ce) and the preview */
+  .preview, .block .ce { font-family: var(--doc-font); font-size: var(--doc-size); color: var(--doc-color); line-height: 1.65; word-wrap: break-word; }
+  .preview { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 30px 36px; }
+  .block .ce { min-height: 96px; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); outline: none; }
+  .block .ce:focus { border-color: var(--accent); background: var(--bg); }
+  .block .ce:empty::before { content: attr(data-ph); color: var(--ink-3); }
+  :where(.preview, .block .ce) > :first-child { margin-top: 0; }
+  :where(.preview, .block .ce) h1 { font-size: 26px; margin: 18px 0 12px; }
+  :where(.preview, .block .ce) h2 { font-size: 20px; margin: 20px 0 8px; }
+  :where(.preview, .block .ce) h3 { font-size: 16px; margin: 16px 0 6px; }
+  :where(.preview, .block .ce) h4, :where(.preview, .block .ce) h5, :where(.preview, .block .ce) h6 { font-size: 14px; margin: 14px 0 6px; }
+  :where(.preview, .block .ce) p { margin: 0 0 12px; }
+  :where(.preview, .block .ce) ul, :where(.preview, .block .ce) ol { margin: 0 0 12px 26px; }
+  :where(.preview, .block .ce) li { margin: 3px 0; }
+  :where(.preview, .block .ce) blockquote { margin: 0 0 12px; padding: 4px 14px; border-left: 3px solid var(--border-strong); color: var(--ink-2); }
+  :where(.preview, .block .ce) code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .92em; }
+  :where(.preview, .block .ce) pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; overflow: auto; margin: 0 0 12px; }
+  :where(.preview, .block .ce) pre code { background: none; border: 0; padding: 0; }
+  :where(.preview, .block .ce) hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+  :where(.preview, .block .ce) a { color: var(--accent); }
+
+  @media print { .toolbar, .fmtbar, .lintbar .actions, #ai-panel { display: none !important; } }
+</style>
+</head>
+<body class="light">
+
+<div class="toolbar ui">
+  <input id="title" class="title" placeholder="Untitled doc" aria-label="Title" />
+  <div class="sep"></div>
+  <button onclick="newDoc()">New</button>
+  <button onclick="openDoc()">Open</button>
+  <button onclick="saveDoc()" title="Save (Ctrl+S)">Save</button>
+  <button onclick="saveDocAs()">Save As</button>
+  <div class="sep"></div>
+  <button id="undo-btn" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↶</button>
+  <button id="redo-btn" onclick="redo()" title="Redo (Ctrl+Y)" disabled>↷</button>
+  <select id="tpl" onchange="loadTemplate(this.value); this.selectedIndex=0;" title="Start from a template">
+    <option value="">Templates…</option>
+    <optgroup label="Document (prose)">
+      <option value="blank">Blank document</option>
+      <option value="letter">Letter</option>
+      <option value="notes">Meeting notes</option>
+    </optgroup>
+    <optgroup label="Compliance (gated)">
+      <option value="rca">Incident postmortem (RCA)</option>
+      <option value="design">Engineering design doc</option>
+      <option value="rfc">Technical proposal (RFC)</option>
+    </optgroup>
+  </select>
+  <button id="mode-btn" onclick="toggleMode()" title="Switch between free-writing prose and compliance-gated sections"></button>
+  <button id="view-btn" onclick="toggleView()" title="Switch between visual editing and Markdown source">Source</button>
+  <button id="export-btn" onclick="exportMarkdown()" title="Export Markdown">Export MD</button>
+  <div class="sep"></div>
+  <button onclick="addBlock()">+ Section</button>
+  <button onclick="AI.show()" title="Local AI - optional, needs Ollama. Routes text; you decide.">✦ AI</button>
+  <div class="spacer"></div>
+  <span id="status"></span>
+  <div class="sep"></div>
+  <button class="icon" id="theme-btn" onclick="toggleTheme()" title="Light / dark">☾</button>
+</div>
+
+<div class="fmtbar ui" id="fmtbar">
+  <button class="fb" onmousedown="event.preventDefault()" onclick="fmtBold()" title="Bold (Ctrl+B)"><b>B</b></button>
+  <button class="fb" onmousedown="event.preventDefault()" onclick="fmtItalic()" title="Italic (Ctrl+I)"><i>I</i></button>
+  <button class="fb" onmousedown="event.preventDefault()" onclick="fmtCode()" title="Inline code">&lt;/&gt;</button>
+  <div class="sep"></div>
+  <button class="fb" onmousedown="event.preventDefault()" onclick="fmtHeading()" title="Heading">H</button>
+  <button class="fb" onmousedown="event.preventDefault()" onclick="fmtList('ul')" title="Bulleted list">&bull; List</button>
+  <button class="fb" onmousedown="event.preventDefault()" onclick="fmtList('ol')" title="Numbered list">1.</button>
+  <button class="fb" onmousedown="event.preventDefault()" onclick="fmtQuote()" title="Quote">&ldquo;</button>
+  <button class="fb" onmousedown="event.preventDefault()" onclick="fmtLink()" title="Link">&#128279;</button>
+  <div class="sep"></div>
+  <select id="fmt-font" title="Font - selected text if any, else the whole document">
+    <option value="sans">Sans-serif</option><option value="serif">Serif</option><option value="mono">Monospace</option>
+  </select>
+  <select id="fmt-size" title="Size - selected text if any, else the whole document">
+    <option value="sm">Small</option><option value="md">Normal</option><option value="lg">Large</option><option value="xl">Extra large</option>
+  </select>
+  <span class="fmt-colors" id="fmt-colors" title="Text color - selected text if any, else the whole document"></span>
+  <span class="fmt-hint">selection if any, else whole doc</span>
+</div>
+
+<main><div class="wrap" id="blocks"></div></main>
+
+<div class="lintbar" id="lintbar">
+  <span class="summary" id="summary"></span>
+</div>
+
+<!-- AI drawer -->
+<div id="ai-panel" class="hidden ui">
+  <div class="ai-head"><strong>✦ Local AI</strong><span class="status" id="ai-status">…</span>
+    <button onclick="AI.hide()" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--ink-2)">✕</button></div>
+  <div class="ai-body">
+    <div class="ai-fence"><b>The AI proposes; you decide.</b> It routes pasted raw text (a Slack thread, notes) into your document's sections - but the **compliance check is always the deterministic kernel**, never the AI. Talks only to your local Ollama at <code>localhost:11434</code>.</div>
+    <label>Model <select id="ai-model"><option value="">(detecting…)</option></select></label>
+    <div class="ai-section">
+      <h3 style="font-size:13px;margin-bottom:6px">Distill into sections</h3>
+      <textarea id="ai-input" placeholder="Paste raw notes / a transcript…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="primary" id="ai-btn">Draft</button><button id="ai-stop" class="hidden">Stop</button>
+      </div>
+      <div id="ai-preview" class="hidden" style="margin-top:10px"></div>
+      <button class="primary hidden" id="ai-apply" style="margin-top:8px">Fill sections</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── verification kernel (inlined; coverage is what the linter uses) ───
+const LocalVerify = (function () {
+  'use strict';
+  function normalize(s, p = {}) { let o = String(s == null ? '' : s); if (p.trim !== false) o = o.trim(); if (p.collapseWhitespace !== false) o = o.replace(/\s+/g, ' '); if (!p.caseSensitive) o = o.toLowerCase(); if (p.stripPunctuation) o = o.replace(/[.,;:!?'"()\[\]{}]/g, ''); return o; }
+  // whole-word match: anchored on the left (so "patch" rejects "dispatched"),
+  // suffix-tolerant on the right (so "patch" still accepts "patched").
+  function wordHit(hay, needle) { const esc = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); const lead = /^\w/.test(needle) ? '\\b' : ''; return new RegExp(lead + esc).test(hay); }
+  function coverage(actual, p = {}) { const req = Array.isArray(p.required) ? p.required : []; const hay = normalize(actual, p); const wb = !!p.wordBoundary; const hit = [], missed = []; for (const kw of req) { const n = normalize(kw, p); const present = n && (wb ? wordHit(hay, n) : hay.indexOf(n) !== -1); if (present) hit.push(kw); else missed.push(kw); } const total = req.length, score = total ? hit.length / total : 0, th = (typeof p.threshold === 'number' && p.threshold > 0) ? Math.min(p.threshold, 1) : 1; return { pass: total > 0 && score >= th, score, detail: { hit, missed, threshold: th } }; }
+  return { normalize, coverage };
+})();
+
+// ── shared LocalOffice core (inlined; embed-aware IO) ─────────────────
+const LocalOffice = (function () {
+  'use strict';
+  const FORMAT = 'localoffice/v1', FORMAT_PREFIX = 'localoffice/', FILE_EXT = '.localoffice.json';
+  const TYPES = ['sheet', 'plan', 'flashcards', 'mindmap', 'slides', 'image', 'runbook', 'doc'];
+  function nowISO() { return new Date().toISOString(); }
+  function uuid() { const c = (typeof crypto !== 'undefined') ? crypto : null; if (c && typeof c.randomUUID === 'function') { try { return c.randomUUID(); } catch (_) {} } let rnd; if (c && typeof c.getRandomValues === 'function') { const b = new Uint8Array(16); c.getRandomValues(b); b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80; rnd = (i) => b[i]; } else { const a = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256)); a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80; rnd = (i) => a[i]; } const h = []; for (let i = 0; i < 16; i++) h.push((rnd(i) + 0x100).toString(16).slice(1)); return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`; }
+  function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function freshBody(type) { return type === 'doc' ? { blocks: [] } : {}; }
+  function createEnvelope(type, opts = {}) { if (!TYPES.includes(type)) throw new Error('createEnvelope: unknown type "' + type + '"'); const ts = nowISO(); return { format: FORMAT, type, meta: { id: opts.id || uuid(), title: opts.title || '', created: ts, modified: ts, app: opts.app || '', tags: Array.isArray(opts.tags) ? opts.tags.slice() : [] }, body: isPlainObject(opts.body) ? opts.body : freshBody(type) }; }
+  function validate(obj) { const e = [], w = []; if (!isPlainObject(obj)) return { ok: false, errors: ['Not a JSON object.'], warnings: w, type: null }; if (typeof obj.format !== 'string') e.push('Missing "format".'); else if (!obj.format.startsWith(FORMAT_PREFIX)) e.push('Unrecognized format.'); if (typeof obj.type !== 'string' || !obj.type) e.push('Missing "type".'); else if (!TYPES.includes(obj.type)) w.push('Unknown type.'); if (!isPlainObject(obj.meta)) e.push('Missing "meta".'); if (!isPlainObject(obj.body)) w.push('Missing "body".'); return { ok: e.length === 0, errors: e, warnings: w, type: typeof obj.type === 'string' ? obj.type : null }; }
+  function normalize(obj) { if (!isPlainObject(obj.meta)) obj.meta = {}; const m = obj.meta; if (typeof m.id !== 'string' || !m.id) m.id = uuid(); if (typeof m.title !== 'string') m.title = ''; if (typeof m.created !== 'string') m.created = nowISO(); if (typeof m.modified !== 'string') m.modified = m.created; if (typeof m.app !== 'string') m.app = ''; if (!Array.isArray(m.tags)) m.tags = []; if (!isPlainObject(obj.body)) obj.body = freshBody(obj.type); return obj; }
+  class LoadError extends Error { constructor(m, d) { super(m); this.name = 'LoadError'; this.detail = d; } }
+  function parse(text, opts = {}) { let raw; try { raw = JSON.parse(text); } catch (e) { throw new LoadError('File is not valid JSON.', e.message); } let r = validate(raw), obj = raw; if (!r.ok && typeof opts.coerce === 'function') { const c = opts.coerce(raw); if (isPlainObject(c)) { obj = c; r = validate(obj); } } if (!r.ok) throw new LoadError('Not a LocalOffice file: ' + r.errors.join(' '), r.errors); normalize(obj); return { envelope: obj, warnings: r.warnings }; }
+  function stringify(env, pretty = true) { return JSON.stringify(env, null, pretty ? 2 : 0); }
+  function serialize(env, opts = {}) { if (!isPlainObject(env)) throw new Error('serialize: not an object'); const r = validate(env); if (!r.ok) throw new Error('serialize: invalid - ' + r.errors.join(' ')); if (opts.touch !== false) { if (!isPlainObject(env.meta)) env.meta = {}; env.meta.modified = nowISO(); } return stringify(env, opts.pretty !== false); }
+  function slugify(s) { return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); }
+  function suggestedName(env) { return (slugify(env && env.meta && env.meta.title) || (env && env.type) || 'untitled') + FILE_EXT; }
+  function supportsFS() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; }
+  const PICKER_TYPES = [{ description: 'LocalOffice file', accept: { 'application/json': ['.json'] } }];
+  function pickFileFallback() { return new Promise((res, rej) => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json'; i.style.display = 'none'; i.addEventListener('change', () => { const f = i.files && i.files[0]; i.remove(); f ? res(f) : rej(new Error('No file selected.')); }); document.body.appendChild(i); i.click(); }); }
+  function isEmbedded() { return typeof window !== 'undefined' && window.parent && window.parent !== window; }
+  function hubSave(text, name, asNew) { return new Promise((resolve, reject) => { const id = 'lo' + Math.random().toString(36).slice(2); function on(e) { const m = e.data; if (!m || m.proto !== 'localoffice' || m.type !== 'saved' || m.id !== id) return; window.removeEventListener('message', on); if (m.ok) resolve({ handle: null, name: m.name || name }); else if (m.error === 'cancelled') { const a = new Error('cancelled'); a.name = 'AbortError'; reject(a); } else reject(new Error(m.error || 'Save failed')); } window.addEventListener('message', on); window.parent.postMessage({ proto: 'localoffice', type: 'save', id, text, name, asNew: !!asNew }, '*'); }); }
+  async function openFile(opts = {}) { if (supportsFS()) { try { const [h] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false }); const f = await h.getFile(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: h, name: f.name, warnings }; } catch (e) { if (e && e.name === 'AbortError') throw e; } } const f = await pickFileFallback(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: null, name: f.name, warnings }; }
+  async function saveFile(env, handle, opts = {}) { const text = serialize(env, opts); if (isEmbedded()) return hubSave(text, suggestedName(env), false); if (handle && typeof handle.createWritable === 'function') { const w = await handle.createWritable(); await w.write(text); await w.close(); return { handle, name: handle.name }; } return saveFileAs(env, suggestedName(env), { ...opts, _text: text }); }
+  async function saveFileAs(env, suggested, opts = {}) { const text = opts._text != null ? opts._text : serialize(env, opts); const name = suggested || suggestedName(env); if (isEmbedded()) return hubSave(text, name, true); if (supportsFS()) { const h = await window.showSaveFilePicker({ suggestedName: name, types: PICKER_TYPES }); const w = await h.createWritable(); await w.write(text); await w.close(); return { handle: h, name: h.name }; } download(text, name); return { handle: null, name }; }
+  function download(text, filename, mime) { const b = new Blob([text], { type: mime || 'application/json' }), u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || ('untitled' + FILE_EXT); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 0); }
+  return { FORMAT, FILE_EXT, TYPES, uuid, createEnvelope, validate, normalize, parse, stringify, serialize, slugify, suggestedName, LoadError, supportsFS, openFile, saveFile, saveFileAs, download };
+})();
+
+// ════════════════════════════════════════════════════════════════════
+// localDoc - state + logic
+// ════════════════════════════════════════════════════════════════════
+const APP = 'localdoc@1.0';
+const THEME_KEY = 'localdoc_theme';
+// body: { docMode?, style?:{font,size,color}, blocks:[ {id, heading, text, required:[]} ] }
+let title = 'Untitled document';
+let fileHandle = null;
+let viewMode = 'wysiwyg';         // view state (disposable, never saved): 'wysiwyg' | 'source'
+function isProse() { return data.docMode === 'prose'; }
+function isWys() { return viewMode === 'wysiwyg'; }
+function blankDoc() { return { docMode: 'prose', style: {}, blocks: [{ id: uid(), heading: '', text: '', required: [] }] }; }
+function docHasContent() { return data.blocks.some(b => (b.heading || '').trim() || (b.text || '').trim()); }
+function focusFirst() { const el = document.querySelector('#blocks .ce, #blocks .block textarea'); if (el) el.focus(); }
+let data = blankDoc();           // boot on a ready-to-type blank page, not an empty screen
+
+const $ = id => document.getElementById(id);
+function uid() { return 'b_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function setStatus(m, err) { const s = $('status'); s.textContent = m || ''; s.style.color = err ? 'var(--bad)' : ''; }
+
+// ── undo / redo (full-doc snapshots; reliable in both Visual and Source) ──
+let undoStack = [], redoStack = [], lastTypeSnap = 0;
+function snapshot() { return JSON.stringify({ title, docMode: data.docMode, style: data.style, blocks: data.blocks }); }
+function histPush(snap) { undoStack.push(snap); if (undoStack.length > 100) undoStack.shift(); redoStack = []; updateUndoButtons(); }
+function pushHistory() { histPush(snapshot()); }   // call BEFORE a mutation (button actions)
+// typing is coalesced: snapshot the pre-edit state once per burst (>500ms gap)
+function maybeTypeSnap() { const now = Date.now(); if (now - lastTypeSnap > 500) histPush(snapshot()); lastTypeSnap = now; }
+function restoreDoc(s) { const o = JSON.parse(s); title = o.title || 'Untitled document'; data.docMode = o.docMode; data.style = o.style || {}; data.blocks = o.blocks || []; updateUndoButtons(); }
+function undo() { if (!undoStack.length) { setStatus('Nothing to undo.'); return; } redoStack.push(snapshot()); restoreDoc(undoStack.pop()); render(); setStatus('Undo'); }
+function redo() { if (!redoStack.length) { setStatus('Nothing to redo.'); return; } undoStack.push(snapshot()); restoreDoc(redoStack.pop()); render(); setStatus('Redo'); }
+function resetHistory() { undoStack = []; redoStack = []; lastTypeSnap = 0; updateUndoButtons(); }
+function updateUndoButtons() { const u = $('undo-btn'), r = $('redo-btn'); if (u) u.disabled = !undoStack.length; if (r) r.disabled = !redoStack.length; }
+
+// ── compliance linter (deterministic - coverage kernel only) ──────────
+// Resolve a block's required-keywords rule from ANY stored shape - the single
+// source of truth so no consumer ever sees a raw, possibly-malformed value.
+// Principle: a malformed rule fails CLOSED, never open. A bare string is coerced
+// (unambiguous intent); an array keeps its valid string keywords. But a non-array
+// /non-string value, or an array that had entries yet none survive as a real
+// keyword, is MALFORMED - we cannot know what to enforce, so the gate must hold.
+// Absent or a genuinely empty [] = no rule (legitimately ungated).
+function requiredOf(b) {
+  const r = b ? b.required : null;
+  if (r == null) return { kw: [], malformed: false };
+  if (typeof r === 'string') return { kw: r.split(',').map(s => s.trim()).filter(Boolean), malformed: false };
+  if (Array.isArray(r)) {
+    if (r.length === 0) return { kw: [], malformed: false };          // genuine no-rule
+    const kw = r.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim());
+    return { kw, malformed: kw.length === 0 };                        // had entries but none valid -> malformed
+  }
+  return { kw: [], malformed: true };                                 // number / boolean / object -> fail closed
+}
+function lintBlock(b) {
+  const { kw, malformed } = requiredOf(b);
+  if (malformed) return { pass: false, score: 0, detail: { hit: [], missed: ['(malformed rule)'], malformed: true } };
+  if (!kw.length) return null;
+  return LocalVerify.coverage(b.text || '', { required: kw, wordBoundary: true });
+}
+function lintReport() {
+  const rows = []; let pass = true;
+  data.blocks.forEach(b => { const r = lintBlock(b); if (r) { rows.push({ heading: b.heading || '(untitled)', pass: r.pass, missed: r.detail.missed }); if (!r.pass) pass = false; } });
+  return { rows, pass, gated: rows.length };
+}
+function canExport() { return lintReport().pass; }
+
+// ── markdown export ───────────────────────────────────────────────────
+function toMarkdown() {
+  let s = '# ' + (title || 'Untitled') + '\n';
+  data.blocks.forEach(b => { s += '\n## ' + (b.heading || '') + '\n\n' + (b.text || '') + '\n'; });
+  return s.trim() + '\n';
+}
+function exportMarkdown() {
+  if (!isProse()) {   // compliance mode still gates on the deterministic kernel
+    const rep = lintReport();
+    if (!rep.pass) { const miss = rep.rows.filter(r => !r.pass).map(r => r.heading + ' (needs: ' + r.missed.join(', ') + ')'); setStatus('Export blocked - incomplete: ' + miss.join('; '), true); return; }
+  }
+  LocalOffice.download(toMarkdown(), (LocalOffice.slugify(title) || 'doc') + '.md', 'text/markdown');
+  setStatus('Exported Markdown.');
+}
+
+// ── Markdown renderer (dependency-free, HTML-escaped → no XSS) ─────────
+// Only the inline-HTML the editor itself emits survives: <span style="…"> whose
+// style is re-validated to color hex / font-size px / a known font-family, plus
+// </span>. Everything else is escaped. So rendering your own doc can't inject.
+function safeSpanStyle(style) {
+  const out = [];
+  for (const decl of String(style).split(';')) {
+    const i = decl.indexOf(':'); if (i < 0) continue;
+    const prop = decl.slice(0, i).trim().toLowerCase(), val = decl.slice(i + 1).trim();
+    if (prop === 'color' && /^#[0-9a-f]{6}$/i.test(val)) out.push('color:' + val.toLowerCase());
+    else if (prop === 'font-size') { const m = val.match(/^(\d{1,2})px$/); if (m) out.push('font-size:' + m[1] + 'px'); }
+    else if (prop === 'font-family' && Object.values(FONTS).includes(val)) out.push('font-family:' + val);
+  }
+  return out.join(';');
+}
+// Inline markdown on already-escaped text (bold/italic/code/links).
+function inlineMd(s) {
+  s = s.replace(/`([^`]+)`/g, (m, c) => '<code>' + c + '</code>');
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => { const safe = /^(https?:|mailto:|#|\/|\.)/i.test(u) ? u : '#'; return '<a href="' + safe + '" target="_blank" rel="noopener noreferrer">' + t + '</a>'; });
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_]+)__/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>').replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+  return s;
+}
+// Split on the editor's own span tags: validated spans pass through, everything
+// else is escaped then inline-markdown'd. No placeholders, no injection path.
+function mdInline(raw) {
+  return String(raw == null ? '' : raw).split(/(<span style="[^"]*">|<\/span>)/gi).map(part => {
+    const open = part.match(/^<span style="([^"]*)">$/i);
+    if (open) { const safe = safeSpanStyle(open[1]); return safe ? '<span style="' + safe + '">' : inlineMd(esc(part)); }
+    if (/^<\/span>$/i.test(part)) return '</span>';
+    return inlineMd(esc(part));
+  }).join('');
+}
+// A style span must not cross block lines (lists/headings/quotes). If one does
+// (e.g. coloring a whole list in Source), redistribute it per line - wrapping
+// each line's content after its marker - so every item renders styled.
+function normalizeBlockSpans(src) {
+  return src.replace(/<span style="([^"]*)">([\s\S]*?)<\/span>/g, (m, style, inner) => {
+    if (inner.indexOf('\n') === -1) return m;   // single-line span: leave it
+    return inner.split('\n').map(line => {
+      const mk = (line.match(/^(\s*(?:[-*+]\s+|\d+\.\s+|>\s?|#{1,6}\s+)?)/) || [''])[0];
+      const content = line.slice(mk.length);
+      return content.trim() ? mk + '<span style="' + style + '">' + content + '</span>' : line;
+    }).join('\n');
+  });
+}
+function mdToHtml(src) {
+  const lines = normalizeBlockSpans(String(src == null ? '' : src).replace(/\r\n?/g, '\n')).split('\n');
+  const isBlockStart = l => /^```/.test(l) || /^\s*$/.test(l) || /^(#{1,6})\s/.test(l) || /^\s*>/.test(l) ||
+    /^\s*[-*+]\s+/.test(l) || /^\s*\d+\.\s+/.test(l) || /^\s*([-*_])(\s*\1){2,}\s*$/.test(l);
+  const out = []; let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^```/.test(line)) { const buf = []; i++; while (i < lines.length && !/^```/.test(lines[i])) buf.push(esc(lines[i++])); i++; out.push('<pre><code>' + buf.join('\n') + '</code></pre>'); continue; }
+    if (/^\s*$/.test(line)) { i++; continue; }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { const n = h[1].length; out.push('<h' + n + '>' + mdInline(h[2].trim()) + '</h' + n + '>'); i++; continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { out.push('<hr>'); i++; continue; }
+    if (/^\s*>/.test(line)) { const buf = []; while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(mdInline(lines[i++].replace(/^\s*>\s?/, ''))); out.push('<blockquote>' + buf.join('<br>') + '</blockquote>'); continue; }
+    if (/^\s*[-*+]\s+/.test(line)) { const buf = []; while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) buf.push('<li>' + mdInline(lines[i++].replace(/^\s*[-*+]\s+/, '')) + '</li>'); out.push('<ul>' + buf.join('') + '</ul>'); continue; }
+    if (/^\s*\d+\.\s+/.test(line)) { const buf = []; while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) buf.push('<li>' + mdInline(lines[i++].replace(/^\s*\d+\.\s+/, '')) + '</li>'); out.push('<ol>' + buf.join('') + '</ol>'); continue; }
+    const buf = []; while (i < lines.length && !isBlockStart(lines[i])) buf.push(mdInline(lines[i++])); out.push('<p>' + buf.join('<br>') + '</p>');
+  }
+  return out.join('\n');
+}
+// ── HTML -> Markdown (serialize the WYSIWYG editor back to clean Markdown) ──
+function colorHex(c) {
+  c = String(c || '').trim();
+  if (/^#[0-9a-f]{6}$/i.test(c)) return c.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(c)) return ('#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3]).toLowerCase();
+  const m = c.match(/rgba?\(\s*(\d+)\D+(\d+)\D+(\d+)/i);
+  if (m) { const h = n => (+n).toString(16).padStart(2, '0'); return '#' + h(m[1]) + h(m[2]) + h(m[3]); }
+  return '';
+}
+function mdInlineOf(node) { let s = ''; node.childNodes.forEach(n => { s += mdSerInline(n); }); return s; }
+function mdSerInline(n) {
+  if (n.nodeType === 3) return n.nodeValue.replace(/ /g, ' ');
+  if (n.nodeType !== 1) return '';
+  const tag = n.tagName.toLowerCase();
+  if (tag === 'br') return '\n';
+  if (tag === 'b' || tag === 'strong') { const t = mdInlineOf(n); return t.trim() ? '**' + t + '**' : t; }
+  if (tag === 'i' || tag === 'em') { const t = mdInlineOf(n); return t.trim() ? '*' + t + '*' : t; }
+  if (tag === 'code') return '`' + n.textContent + '`';
+  if (tag === 'a') { const href = n.getAttribute('href') || ''; return '[' + mdInlineOf(n) + '](' + href + ')'; }
+  if (tag === 'font') { const col = colorHex(n.getAttribute('color')); const t = mdInlineOf(n); return col ? '<span style="color:' + col + '">' + t + '</span>' : t; }
+  if (tag === 'span') {
+    const d = [], st = n.style;
+    const col = colorHex(st.color); if (col) d.push('color:' + col);
+    const fm = (st.fontSize || '').match(/^(\d{1,2})px$/); if (fm) d.push('font-size:' + fm[1] + 'px');
+    if (st.fontFamily && Object.values(FONTS).includes(st.fontFamily)) d.push('font-family:' + st.fontFamily);
+    const t = mdInlineOf(n); return d.length ? '<span style="' + d.join(';') + '">' + t + '</span>' : t;
+  }
+  return mdInlineOf(n);
+}
+function htmlToMarkdown(root) {
+  const blocks = [];
+  root.childNodes.forEach(n => {
+    if (n.nodeType === 3) { const t = n.nodeValue.replace(/ /g, ' ').trim(); if (t) blocks.push(t); return; }
+    if (n.nodeType !== 1) return;
+    const tag = n.tagName.toLowerCase();
+    if (/^h[1-6]$/.test(tag)) blocks.push('#'.repeat(+tag[1]) + ' ' + mdInlineOf(n).trim());
+    else if (tag === 'ul') { const it = [...n.children].filter(li => li.tagName === 'LI').map(li => '- ' + mdInlineOf(li).trim()); if (it.length) blocks.push(it.join('\n')); }
+    else if (tag === 'ol') { let i = 1; const it = [...n.children].filter(li => li.tagName === 'LI').map(li => (i++) + '. ' + mdInlineOf(li).trim()); if (it.length) blocks.push(it.join('\n')); }
+    else if (tag === 'blockquote') blocks.push(mdInlineOf(n).trim().split('\n').map(l => '> ' + l).join('\n'));
+    else if (tag === 'pre') blocks.push('```\n' + n.textContent.replace(/\n$/, '') + '\n```');
+    else if (tag === 'hr') blocks.push('---');
+    else { const s = mdSerInline(n).replace(/\s+$/, ''); if (s.trim()) blocks.push(s); }   // div / p / inline
+  });
+  return blocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function wordCount() {
+  const txt = data.blocks.map(b => b.text || '').join(' ').trim();
+  return { words: txt ? txt.split(/\s+/).length : 0, chars: data.blocks.reduce((n, b) => n + (b.text || '').length, 0) };
+}
+
+// ── mode (prose ⇄ compliance) + view (edit ⇄ preview) ─────────────────
+function setMode(mode) {
+  pushHistory();
+  data.docMode = mode === 'prose' ? 'prose' : 'compliance';
+  if (isProse() && !data.blocks.length) data.blocks.push({ id: uid(), heading: '', text: '', required: [] });
+  render(); setStatus(isProse() ? 'Prose mode - free writing, export open.' : 'Compliance mode - export gated by required keywords.');
+}
+function toggleMode() { setMode(isProse() ? 'compliance' : 'prose'); }
+function toggleView() { viewMode = isWys() ? 'source' : 'wysiwyg'; render(); }
+
+// ── typography: font / size / color (document default in body.style) ──
+const FONTS = { sans: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif", serif: "Georgia, 'Times New Roman', serif", mono: "ui-monospace, Menlo, Consolas, monospace" };
+const SIZES = { sm: '13px', md: '15px', lg: '17px', xl: '20px' };
+const COLORS = ['', '#a4332f', '#b8862a', '#2f7d3a', '#2563eb', '#7a4fd0', '#5a5a55'];
+function docStyle() { const s = (data && data.style) || {}; return { font: FONTS[s.font] ? s.font : 'sans', size: SIZES[s.size] ? s.size : 'md', color: typeof s.color === 'string' ? s.color : '' }; }
+function applyDocStyle() { const st = docStyle(), host = $('blocks'); if (!host) return; host.style.setProperty('--doc-font', FONTS[st.font]); host.style.setProperty('--doc-size', SIZES[st.size]); host.style.setProperty('--doc-color', st.color || 'var(--ink)'); syncFmtControls(); }
+function setDocStyle(patch) { pushHistory(); if (!data.style || typeof data.style !== 'object') data.style = {}; Object.assign(data.style, patch); applyDocStyle(); }
+function syncFmtControls() { const st = docStyle(), f = $('fmt-font'), z = $('fmt-size'); if (f) f.value = st.font; if (z) z.value = st.size; [...document.querySelectorAll('#fmt-colors .swatch')].forEach(b => b.classList.toggle('sel', (b.dataset.c || '') === st.color)); }
+function buildSwatches() { const host = $('fmt-colors'); if (!host) return; host.innerHTML = COLORS.map(c => '<button class="swatch' + (c ? '' : ' def') + '" data-c="' + c + '" title="' + (c || 'Default') + '"' + (c ? ' style="background:' + c + '"' : '') + '>' + (c ? '' : 'A') + '</button>').join(''); [...host.querySelectorAll('.swatch')].forEach(b => b.addEventListener('click', () => chooseColor(b.dataset.c || ''))); }
+
+// ── selection formatting ──────────────────────────────────────────────
+// Source mode acts on the focused textarea (Markdown); WYSIWYG acts on the
+// focused contentEditable via the Selection API / execCommand.
+let activeTA = null, activeCE = null, activeBlockId = null;
+function hasSelection() { return !!activeTA && activeTA.selectionStart !== activeTA.selectionEnd; }
+function fmtApply(transform) {
+  const ta = activeTA; if (!ta) { setStatus('Click into the text first.', true); return; }
+  const b = byId(activeBlockId); if (!b) return;
+  pushHistory();
+  transform(ta); b.text = ta.value; renderLint();   // keep data + word count in sync (no input event fires)
+}
+function wrapInline(pre, post) { fmtApply(ta => { const s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e); ta.value = ta.value.slice(0, s) + pre + sel + post + ta.value.slice(e); ta.setSelectionRange(s + pre.length, s + pre.length + sel.length); ta.focus(); }); }
+function linePrefix(pre) { fmtApply(ta => { const v = ta.value, s = ta.selectionStart, e = ta.selectionEnd; const ls = v.lastIndexOf('\n', s - 1) + 1; let le = v.indexOf('\n', e); if (le < 0) le = v.length; const seg = v.slice(ls, le).split('\n').map(l => pre + l).join('\n'); ta.value = v.slice(0, ls) + seg + v.slice(le); ta.setSelectionRange(ls, ls + seg.length); ta.focus(); }); }
+function insertLink() { fmtApply(ta => { const s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.slice(s, e) || 'link text'; const md = '[' + sel + '](https://)'; ta.value = ta.value.slice(0, s) + md + ta.value.slice(e); const u = s + sel.length + 3; ta.setSelectionRange(u, u + 8); ta.focus(); }); }
+// Style the selection. Wrap each line's content (after any list/heading/quote
+// marker) in its own merged span, so a span never crosses block lines (which
+// breaks Markdown) and re-applying replaces instead of nesting.
+function wrapSpan(decl) {
+  fmtApply(ta => {
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    if (s === e) { setStatus('Select some text first to style it.', true); return; }
+    const MARK = /^(\s*(?:[-*+]\s+|\d+\.\s+|>\s?|#{1,6}\s+)?)/;   // leading block marker (kept outside the span)
+    const styled = ta.value.slice(s, e).split('\n').map(line => {
+      const mk = (line.match(MARK) || [''])[0];
+      let content = line.slice(mk.length);
+      if (!content.trim()) return line;                          // blank / marker-only line
+      const style = new Map();   // merge any existing spans in this line, then re-wrap once
+      const add = str => { for (const d of str.split(';')) { const i = d.indexOf(':'); if (i > 0) style.set(d.slice(0, i).trim().toLowerCase(), d.slice(i + 1).trim()); } };
+      content = content.replace(/<span style="([^"]*)">/g, (mm, st) => { add(st); return ''; }).replace(/<\/span>/g, '');
+      add(decl);
+      return mk + '<span style="' + [...style].map(([k, val]) => k + ':' + val).join(';') + '">' + content + '</span>';
+    }).join('\n');
+    ta.value = ta.value.slice(0, s) + styled + ta.value.slice(e);
+    ta.setSelectionRange(s, s + styled.length);
+    ta.focus();
+  });
+}
+// WYSIWYG (contentEditable) formatting
+function ceSync() { const b = byId(activeBlockId); if (b && activeCE) { b.text = htmlToMarkdown(activeCE); updateBadgeFor(b); renderLint(); } }
+function ceExec(cmd, val) { if (!activeCE) { setStatus('Click into the text first.', true); return; } pushHistory(); activeCE.focus(); try { document.execCommand(cmd, false, val); } catch (e) {} ceSync(); }
+function ceWrapCode() {
+  if (!activeCE) { setStatus('Click into the text first.', true); return; }
+  pushHistory();
+  activeCE.focus(); const sel = window.getSelection();
+  if (sel && sel.rangeCount && !sel.isCollapsed) { const r = sel.getRangeAt(0), code = document.createElement('code'); try { r.surroundContents(code); } catch (e) { const f = r.extractContents(); code.appendChild(f); r.insertNode(code); } }
+  ceSync();
+}
+
+// formatting-bar dispatchers (mode-aware)
+function fmtBold() { isWys() ? ceExec('bold') : wrapInline('**', '**'); }
+function fmtItalic() { isWys() ? ceExec('italic') : wrapInline('*', '*'); }
+function fmtCode() { isWys() ? ceWrapCode() : wrapInline('`', '`'); }
+function fmtHeading() { isWys() ? ceExec('formatBlock', 'h2') : linePrefix('## '); }
+function fmtList(kind) { isWys() ? ceExec(kind === 'ol' ? 'insertOrderedList' : 'insertUnorderedList') : linePrefix(kind === 'ol' ? '1. ' : '- '); }
+function fmtQuote() { isWys() ? ceExec('formatBlock', 'blockquote') : linePrefix('> '); }
+function fmtLink() { if (isWys()) { const u = prompt('Link URL', 'https://'); if (u) ceExec('createLink', u); } else insertLink(); }
+
+// font / size are document-level in WYSIWYG (live via CSS vars); per-selection in source.
+function chooseFont(v) { if (!isWys() && hasSelection()) wrapSpan('font-family:' + FONTS[v]); else setDocStyle({ font: v }); }
+function chooseSize(v) { if (!isWys() && hasSelection()) wrapSpan('font-size:' + SIZES[v]); else setDocStyle({ size: v }); }
+function chooseColor(c) {
+  if (isWys()) { if (c && activeCE) ceExec('foreColor', c); else setDocStyle({ color: c }); return; }
+  if (c && hasSelection()) wrapSpan('color:' + c); else setDocStyle({ color: c });
+}
+
+// ── block ops ─────────────────────────────────────────────────────────
+function addBlock(heading, text, required) { pushHistory(); const b = { id: uid(), heading: heading || (isProse() ? '' : 'New section'), text: text || '', required: required || [] }; data.blocks.push(b); render(); const el = document.querySelector('.block[data-id="' + b.id + '"] .heading'); if (el) el.focus(); return b; }
+function removeBlock(id) { pushHistory(); data.blocks = data.blocks.filter(b => b.id !== id); render(); }
+function moveBlock(id, d) { const i = data.blocks.findIndex(b => b.id === id); const j = i + d; if (i < 0 || j < 0 || j >= data.blocks.length) return; pushHistory(); const t = data.blocks[i]; data.blocks[i] = data.blocks[j]; data.blocks[j] = t; render(); }
+function byId(id) { return data.blocks.find(b => b.id === id); }
+
+// ── render ────────────────────────────────────────────────────────────
+function render() {
+  $('title').value = title;
+  document.body.classList.toggle('prose', isProse());
+  $('mode-btn').textContent = isProse() ? 'Prose mode' : 'Compliance mode';
+  $('view-btn').textContent = isWys() ? 'Source' : 'Visual';
+  $('view-btn').title = isWys() ? 'Edit the raw Markdown source' : 'Back to visual editing';
+  applyDocStyle();
+  const host = $('blocks');
+  if (!data.blocks.length) {
+    host.innerHTML = isProse()
+      ? '<div class="empty"><h1>Start writing</h1><p>Add a section with <b>+ Section</b> (or pick a document template) and just type - formatting shows live. Use <b>Source</b> for raw Markdown.</p></div>'
+      : '<div class="empty"><h1>Write a structured doc</h1><p>Add sections, give some a <b>required-keywords</b> rule, and the compliance linter gates <b>Export</b> until each required section contains its keywords - checked by the deterministic kernel, never an LLM.</p></div>';
+    renderLint(); return;
+  }
+  host.innerHTML = '';
+  data.blocks.forEach(b => host.appendChild(makeBlock(b)));
+  renderLint();
+}
+function badgeHtml(b) { const r = lintBlock(b); return r ? (r.pass ? '<span class="badge ok">compliant</span>' : '<span class="badge bad">missing: ' + esc(r.detail.missed.join(', ')) + '</span>') : ''; }
+function updateBadgeFor(b) { const el = document.querySelector('.block[data-id="' + b.id + '"] .bdg'); if (el) el.innerHTML = badgeHtml(b); }
+function makeBlock(b) {
+  const el = document.createElement('div'); el.className = 'block'; el.dataset.id = b.id;
+  const editor = isWys()
+    ? '<div class="text ce" contenteditable="true" data-ph="Write…"></div>'
+    : '<textarea class="text" placeholder="Write…">' + esc(b.text) + '</textarea>';
+  el.innerHTML =
+    '<div class="head"><input class="heading" type="text" value="' + esc(b.heading) + '" placeholder="Section heading">' +
+    '<span class="bdg">' + badgeHtml(b) + '</span>' +
+    '<span class="ops"><button class="up" title="Move up">↑</button><button class="down" title="Move down">↓</button><button class="rm" title="Remove">✕</button></span></div>' +
+    editor +
+    '<div class="req">required keywords: <input class="reqi" type="text" placeholder="comma,separated (optional)" value="' + esc(requiredOf(b).kw.join(', ')) + '"></div>';
+  el.querySelector('.rm').addEventListener('click', () => removeBlock(b.id));
+  el.querySelector('.up').addEventListener('click', () => moveBlock(b.id, -1));
+  el.querySelector('.down').addEventListener('click', () => moveBlock(b.id, 1));
+  el.querySelector('.heading').addEventListener('change', e => { b.heading = e.target.value; });
+  if (isWys()) {
+    const ce = el.querySelector('.ce'); ce.innerHTML = mdToHtml(b.text || '');
+    ce.addEventListener('focus', () => { activeCE = ce; activeTA = null; activeBlockId = b.id; });
+    ce.addEventListener('input', () => { b.text = htmlToMarkdown(ce); updateBadgeFor(b); renderLint(); });
+  } else {
+    const ta = el.querySelector('textarea');
+    ta.addEventListener('focus', () => { activeTA = ta; activeCE = null; activeBlockId = b.id; });
+    ta.addEventListener('input', () => { b.text = ta.value; updateBadgeFor(b); renderLint(); });
+  }
+  el.querySelector('.reqi').addEventListener('change', e => { b.required = e.target.value.split(',').map(s => s.trim()).filter(Boolean); render(); });
+  return el;
+}
+function renderLint() {
+  const bar = $('lintbar');
+  if (isProse()) {   // prose mode: no gate, show a word/character count instead
+    bar.classList.remove('ready', 'blocked');
+    const { words, chars } = wordCount();
+    $('summary').innerHTML = '<b>' + words + '</b> word' + (words === 1 ? '' : 's') + ' · ' + chars + ' character' + (chars === 1 ? '' : 's');
+    $('export-btn').disabled = false;
+    return;
+  }
+  const rep = lintReport();
+  bar.classList.toggle('ready', rep.gated > 0 && rep.pass); bar.classList.toggle('blocked', rep.gated > 0 && !rep.pass);
+  if (rep.gated === 0) $('summary').innerHTML = 'No compliance rules - export is open. (Add required keywords to a section to gate it.)';
+  else if (rep.pass) $('summary').innerHTML = '<b>Compliant</b> - all ' + rep.gated + ' gated section(s) contain their required keywords.';
+  else { const miss = rep.rows.filter(r => !r.pass).length; $('summary').innerHTML = '<b>' + (rep.gated - miss) + ' / ' + rep.gated + '</b> gated section(s) compliant - <b>export blocked</b> until the rest are complete.'; }
+  $('export-btn').disabled = !canExport();
+}
+
+// ── templates (neutral / engineering-generic) ─────────────────────────
+const TEMPLATES = {
+  blank: { docMode: 'prose', title: 'Untitled document', blocks: [
+    { heading: '', text: '', required: [] },
+  ] },
+  letter: { docMode: 'prose', title: 'Letter', blocks: [
+    { heading: '', text: 'Dear ___,\n\n\n\nSincerely,\n', required: [] },
+  ] },
+  notes: { docMode: 'prose', title: 'Meeting notes', blocks: [
+    { heading: 'Agenda', text: '- ', required: [] },
+    { heading: 'Discussion', text: '', required: [] },
+    { heading: 'Action items', text: '- [ ] ', required: [] },
+  ] },
+  rca: { title: 'Incident Postmortem', blocks: [
+    { heading: 'Summary', text: '', required: [] },
+    { heading: 'Timeline', text: '', required: [] },
+    { heading: 'Root cause', text: '', required: ['cause'] },
+    { heading: 'Mitigation', text: '', required: ['patch', 'deploy'] },
+    { heading: 'Prevention', text: '', required: ['action', 'owner'] },
+  ] },
+  design: { title: 'Engineering Design Doc', blocks: [
+    { heading: 'Summary', text: '', required: [] },
+    { heading: 'Goals', text: '', required: ['goal'] },
+    { heading: 'Non-goals', text: '', required: [] },
+    { heading: 'Design', text: '', required: ['interface'] },
+    { heading: 'Risks', text: '', required: ['risk', 'mitigat'] },
+  ] },
+  rfc: { title: 'Technical proposal (RFC)', blocks: [
+    { heading: 'Summary', text: '', required: ['summary'] },
+    { heading: 'Motivation', text: '', required: ['motivation'] },
+    { heading: 'Design', text: '', required: ['design'] },
+    { heading: 'Alternatives', text: '', required: ['alternative'] },
+  ] },
+};
+function loadTemplate(key) {
+  if (!key || !TEMPLATES[key]) return;
+  if (data.blocks.length && !confirm('Replace the current doc with the "' + TEMPLATES[key].title + '" template?')) return;
+  const t = TEMPLATES[key];
+  data = { docMode: t.docMode || 'compliance', blocks: t.blocks.map(b => ({ id: uid(), heading: b.heading, text: b.text, required: (b.required || []).slice() })) };
+  title = t.title; fileHandle = null; viewMode = 'wysiwyg'; resetHistory(); render(); setStatus('Loaded template: ' + t.title);
+}
+
+// ── envelope IO ───────────────────────────────────────────────────────
+function exportData() { return LocalOffice.createEnvelope('doc', { title: title || 'Untitled doc', app: APP, body: data }); }
+// We do NOT normalize `required` here - the raw value is preserved (honest
+// round-trip; we never silently rewrite the author's data) and every consumer
+// reads it through requiredOf(), which fails closed on a malformed rule. So a
+// hand-edited file with a string, or a corrupted non-array, gates correctly
+// without a fragile pre-coercion step (the previous pre-coercion turned a
+// non-array into [] - a silent fail-open - and a raw non-array crashed lintBlock).
+function importData(env) { data = env.body; if (!Array.isArray(data.blocks)) data.blocks = []; data.blocks.forEach(b => { if (!b.id) b.id = uid(); }); title = (env.meta && env.meta.title) || 'Untitled doc'; }
+function applyOpened(env) { if (env.type !== 'doc') throw new Error('Not a doc file ("' + env.type + '")'); importData(env); viewMode = 'wysiwyg'; resetHistory(); render(); }
+function newDoc() { if (docHasContent() && !confirm('Start a new doc?')) return; data = blankDoc(); title = 'Untitled document'; fileHandle = null; viewMode = 'wysiwyg'; resetHistory(); render(); focusFirst(); setStatus('New'); }
+async function openDoc() { try { const res = await LocalOffice.openFile(); if (res.envelope.type !== 'doc') { setStatus('That is a "' + res.envelope.type + '" file, not a doc.', true); return; } importData(res.envelope); fileHandle = res.handle; resetHistory(); render(); setStatus('Opened ' + res.name); } catch (e) { if (e && e.name !== 'AbortError') setStatus('Open failed: ' + e.message, true); } }
+async function saveDoc() { try { const res = await LocalOffice.saveFile(exportData(), fileHandle); fileHandle = res.handle; setStatus('Saved' + (res.name ? ' · ' + res.name : '')); } catch (e) { if (e && e.name !== 'AbortError') setStatus('Save failed: ' + e.message, true); } }
+async function saveDocAs() { try { const env = exportData(); const res = await LocalOffice.saveFileAs(env, LocalOffice.suggestedName(env)); fileHandle = res.handle; setStatus('Saved · ' + res.name); } catch (e) { if (e && e.name !== 'AbortError') setStatus('Save failed: ' + e.message, true); } }
+
+$('title').addEventListener('input', e => { title = e.target.value || 'Untitled document'; });
+// coalesced typing snapshots: record the pre-edit state once per burst, for any editor field
+document.addEventListener('beforeinput', e => { const t = e.target; if (t && (t.id === 'title' || (t.closest && t.closest('#blocks')))) maybeTypeSnap(); });
+
+// ── text-style (Aa) wiring ────────────────────────────────────────────
+buildSwatches();
+$('fmt-font').addEventListener('change', e => chooseFont(e.target.value));
+$('fmt-size').addEventListener('change', e => chooseSize(e.target.value));
+
+// ── optional local AI - routes pasted text into sections (advisory) ───
+const DISTILL_PROMPT = `You are a technical writer. Route the user's raw text into the given document sections.
+Return STRICT JSON: an object mapping each section heading to drafted prose for that section.
+Use ONLY these exact headings (omit any that don't apply): {{HEADINGS}}.
+No markdown fences, no commentary - only the JSON object.`;
+const AI = {
+  host: 'http://localhost:11434', model: '', models: [], abort: null,
+  async detect() { setAiStatus('Detecting Ollama…'); try { const res = await fetch(this.host + '/api/tags'); if (!res.ok) throw new Error('HTTP ' + res.status); this.models = ((await res.json()).models || []).map(m => m.name); const sel = $('ai-model'); if (!this.models.length) { sel.innerHTML = '<option value="">(no models - run: ollama pull llama3.2)</option>'; setAiStatus('Ollama is running but has no models.'); return; } sel.innerHTML = this.models.map(m => '<option>' + esc(m) + '</option>').join(''); if (!this.model || !this.models.includes(this.model)) this.model = this.models[0]; sel.value = this.model; setAiStatus('Connected · ' + this.models.length + ' model(s).'); } catch (e) { $('ai-model').innerHTML = '<option value="">(Ollama not detected)</option>'; setAiStatus('Cannot reach Ollama. Install it, then: ollama serve.', true); } },
+  async ensureModel() { if (this.model) return this.model; await this.detect(); return this.model; },
+  async generateJSON(prompt, system) { const model = await this.ensureModel(); if (!model) throw new Error('No Ollama model available.'); this.abort = new AbortController(); const t0 = Date.now(); const tick = setInterval(() => setAiStatus('Thinking… ' + ((Date.now() - t0) / 1000).toFixed(1) + 's'), 200); try { const res = await fetch(this.host + '/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, system, stream: false, format: 'json', options: { temperature: 0 } }), signal: this.abort.signal }); if (!res.ok) throw new Error('HTTP ' + res.status); return JSON.parse((await res.json()).response); } finally { clearInterval(tick); this.abort = null; } },
+  show() { $('ai-panel').classList.remove('hidden'); this.detect(); }, hide() { $('ai-panel').classList.add('hidden'); }
+};
+function setAiStatus(m, err) { const s = $('ai-status'); if (!s) return; s.textContent = m || ''; s.classList.toggle('err', !!err); }
+let pendingFill = null;
+// validate AI output: keep only keys matching existing headings, values as strings
+function routeToBlocks(obj) {
+  const out = {}; if (!obj || typeof obj !== 'object') return out;
+  const headings = data.blocks.map(b => b.heading);
+  for (const k of Object.keys(obj)) { if (headings.includes(k) && obj[k] != null && String(obj[k]).trim()) out[k] = String(obj[k]).trim(); }
+  return out;
+}
+async function aiDistill() {
+  const src = $('ai-input').value.trim(); if (!src) { setAiStatus('Paste some text first.', true); return; }
+  if (!data.blocks.length) { setAiStatus('Add sections first (or load a template).', true); return; }
+  const btn = $('ai-btn'), stop = $('ai-stop'); btn.classList.add('hidden'); stop.classList.remove('hidden');
+  try {
+    const sys = DISTILL_PROMPT.replace('{{HEADINGS}}', data.blocks.map(b => '"' + b.heading + '"').join(', '));
+    const routed = routeToBlocks(await AI.generateJSON('Raw text:\n\n' + src, sys));
+    const keys = Object.keys(routed);
+    if (!keys.length) { setAiStatus('No section content returned.', true); return; }
+    pendingFill = routed;
+    $('ai-preview').textContent = keys.map(k => '## ' + k + '\n' + routed[k]).join('\n\n');
+    $('ai-preview').classList.remove('hidden'); $('ai-apply').classList.remove('hidden');
+    setAiStatus('Drafted ' + keys.length + ' section(s) - review, then fill.');
+  } catch (e) { setAiStatus(e.name === 'AbortError' ? 'Cancelled.' : ('Error: ' + e.message), true); }
+  finally { btn.classList.remove('hidden'); stop.classList.add('hidden'); }
+}
+function aiApply() {
+  if (!pendingFill) return;
+  Object.keys(pendingFill).forEach(h => { const b = data.blocks.find(x => x.heading === h); if (b) b.text = (b.text ? b.text + '\n\n' : '') + pendingFill[h]; });
+  pendingFill = null; $('ai-preview').classList.add('hidden'); $('ai-apply').classList.add('hidden'); $('ai-input').value = '';
+  render(); setAiStatus('Filled the sections - the compliance check is still the kernel\'s, not the AI\'s.');
+}
+$('ai-btn').addEventListener('click', aiDistill);
+$('ai-apply').addEventListener('click', aiApply);
+$('ai-stop').addEventListener('click', () => { if (AI.abort) AI.abort.abort(); });
+$('ai-model').addEventListener('change', e => { AI.model = e.target.value; });
+window.AI = AI;
+
+// ── theme ─────────────────────────────────────────────────────────────
+function applyTheme() { let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) {} const isDark = s === 'dark' || (s === null && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark); $('theme-btn').textContent = isDark ? '☀' : '☾'; const mc = document.querySelector('meta[name="theme-color"]'); if (mc) mc.content = isDark ? '#1a1a17' : '#fafaf7'; }
+function toggleTheme() { const d = document.body.classList.contains('dark'); try { localStorage.setItem(THEME_KEY, d ? 'light' : 'dark'); } catch (e) {} applyTheme(); }
+window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) {} if (s === null) applyTheme(); });
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveDoc(); return; }
+  // custom undo/redo (overrides the flaky native contentEditable undo), except
+  // inside the AI panel / JSON inspector, where their textareas keep native undo.
+  const ae = document.activeElement, inAux = ae && ae.closest && (ae.closest('#ai-panel') || ae.closest('#jp'));
+  if (!inAux && (e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (!inAux && (e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'b' || e.key === 'B' || e.key === 'i' || e.key === 'I')) {
+    const bold = (e.key === 'b' || e.key === 'B');
+    if (isWys() && activeCE && document.activeElement === activeCE) { e.preventDefault(); bold ? fmtBold() : fmtItalic(); }
+    else if (activeTA && document.activeElement === activeTA) { e.preventDefault(); bold ? wrapInline('**', '**') : wrapInline('*', '*'); }
+  }
+});
+
+// ── embed: opened inside the LocalOffice Hub ──────────────────────────
+window.addEventListener('message', async e => {
+  const m = e.data; if (!m || m.proto !== 'localoffice') return;
+  if (m.type === 'open-handle') { if (m.handle) fileHandle = m.handle; return; }
+  if (m.type !== 'open') return;
+  try { let t = m.text, h = m.handle || null; if (h && t == null) t = await (await h.getFile()).text(); applyOpened(LocalOffice.parse(t).envelope); if (h) fileHandle = h; (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: true }, '*'); }
+  catch (err) { (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: false, error: String(err && err.message || err) }, '*'); }
+});
+
+// ── boot ──────────────────────────────────────────────────────────────
+applyTheme();
+render();
+// ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
+const JsonPanel = (function () {
+  'use strict';
+  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  function build() {
+    const s = document.createElement('style');
+    s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
+    document.head.appendChild(s);
+    host = document.createElement('div'); host.id = 'jp';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    document.body.appendChild(host);
+    ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
+    const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
+    on('x', hide);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
+    on('apply', apply);
+    host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
+    document.addEventListener('keydown', e => { if (host.classList.contains('on') && e.key === 'Escape') hide(); });
+  }
+  function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
+  function hide() { host.classList.remove('on'); }
+  function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
+  async function apply() {
+    try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
+    catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
+  }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function init(h) {
+    hooks = h; if (!host) build();
+    const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
+    const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
+    if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
+    else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
+    btn.addEventListener('click', open);
+  }
+  return { init, open };
+})();
+JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpened(LocalOffice.parse(t).envelope) });
+
+if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localDoc' }, '*');
+</script>
+</body>
+</html>

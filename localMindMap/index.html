@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#fafaf7" />
+<title>localMindMap</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --surface: #ffffff;
+    --surface-2: #f4f3ee;
+    --ink: #1a1a17;
+    --ink-2: #5a5a55;
+    --ink-3: #8a8a83;
+    --border: rgba(0,0,0,0.08);
+    --border-strong: rgba(0,0,0,0.14);
+    --accent: #5a4a2f;
+    --accent-soft: #f0e9d8;
+    --gold: #b8862a;
+    --danger: #a44040;
+    --link: rgba(0,0,0,0.22);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05);
+    --shadow-lg: 0 10px 40px rgba(0,0,0,0.12);
+  }
+  body.dark {
+    --bg: #1a1a17;
+    --surface: #242420;
+    --surface-2: #2c2c27;
+    --ink: #f0ede6;
+    --ink-2: #b5b1a8;
+    --ink-3: #807c73;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.16);
+    --accent: #c4a265;
+    --accent-soft: #3a3320;
+    --gold: #d9b25e;
+    --danger: #d98a8a;
+    --link: rgba(255,255,255,0.22);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── toolbar ─────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    z-index: 10;
+  }
+  .toolbar input.title {
+    font: inherit;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 5px 8px;
+    min-width: 160px;
+    flex: 0 1 240px;
+  }
+  .toolbar input.title:hover { border-color: var(--border); }
+  .toolbar input.title:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+  .toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+  .toolbar .spacer { flex: 1; }
+  button {
+    font: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 6px 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .12s, border-color .12s;
+  }
+  button:hover { background: var(--surface-2); border-color: var(--accent); }
+  button:active { transform: translateY(0.5px); }
+  button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  button.icon { padding: 6px 9px; }
+  .zoom-label { font-size: 12px; color: var(--ink-2); min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+  #status { font-size: 12px; color: var(--ink-2); margin-left: 8px; }
+  #status.err { color: var(--danger); }
+
+  /* ── canvas ──────────────────────────────────────────── */
+  #canvas {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    cursor: grab;
+    background:
+      radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0);
+    background-size: 26px 26px;
+  }
+  #canvas.panning { cursor: grabbing; }
+  #canvas.linking { cursor: crosshair; }
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #edges { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+  #edges path.link { fill: none; stroke: var(--link); stroke-width: 2; }
+  #edges path.xlink { fill: none; stroke: var(--gold); stroke-width: 2; stroke-dasharray: 5 4; opacity: .85; }
+  #edges text.xlabel { fill: var(--ink-2); font-size: 12px; font-family: inherit; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
+
+  .node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    max-width: 220px;
+    min-width: 70px;
+    background: var(--surface);
+    border: 1.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 9px 13px;
+    cursor: grab;
+    user-select: none;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .node:active { cursor: grabbing; }
+  .node.root {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .node.sel { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); }
+  .node.root.sel { box-shadow: 0 0 0 3px var(--gold), var(--shadow); }
+  .node-text { outline: none; word-break: break-word; white-space: pre-wrap; min-width: 24px; }
+  .node-text[contenteditable="true"] { cursor: text; }
+  .node .toggle {
+    position: absolute;
+    right: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1.5px solid var(--border-strong);
+    color: var(--ink-2);
+    font-size: 11px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    z-index: 2;
+    line-height: 1;
+  }
+  .node .toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── hint bar ────────────────────────────────────────── */
+  #hint {
+    position: absolute;
+    left: 50%; bottom: 14px;
+    transform: translateX(-50%);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+    padding: 7px 16px;
+    font-size: 12px;
+    color: var(--ink-2);
+    z-index: 5;
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: 92vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #hint b { color: var(--ink); font-weight: 600; }
+  #hint kbd {
+    font-family: inherit;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px;
+    color: var(--ink);
+  }
+
+  /* ── node category colors (override default + root) ──── */
+  .node.c-blue   { background: #e6eefb; border-color: #5b87d6; color: var(--ink); }
+  .node.c-green  { background: #e7f3e1; border-color: #5d9b48; color: var(--ink); }
+  .node.c-red    { background: #fbe8e6; border-color: #cf6655; color: var(--ink); }
+  .node.c-amber  { background: #f9f0d8; border-color: #c39a36; color: var(--ink); }
+  .node.c-purple { background: #efe8fb; border-color: #8a6dc8; color: var(--ink); }
+  body.dark .node.c-blue   { background: #233246; border-color: #5b87d6; }
+  body.dark .node.c-green  { background: #243a26; border-color: #5d9b48; }
+  body.dark .node.c-red    { background: #432826; border-color: #cf6655; }
+  body.dark .node.c-amber  { background: #3b3320; border-color: #c39a36; }
+  body.dark .node.c-purple { background: #2f2842; border-color: #8a6dc8; }
+
+  /* ── logic-gate node affordance (a diagram glyph, NOT a netlist) ─── */
+  .node.gate { display: flex; align-items: center; gap: 8px; }
+  .node .gate-glyph { flex: 0 0 auto; width: 26px; height: 20px; }
+  .node .gate-glyph path, .node .gate-glyph circle { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+
+  /* ── image on a node ─────────────────────────────────── */
+  .node-img-wrap { position: relative; margin-bottom: 7px; }
+  .node-img { display: block; max-width: 200px; max-height: 150px; border-radius: var(--radius-sm); object-fit: contain; }
+  .node-img-rm {
+    position: absolute; top: 3px; right: 3px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(0,0,0,0.55); color: #fff; border: none;
+    font-size: 11px; line-height: 1; cursor: pointer;
+    display: none; align-items: center; justify-content: center; padding: 0;
+  }
+  .node:hover .node-img-rm { display: flex; }
+
+  /* ── color swatches in toolbar ───────────────────────── */
+  .swatch { width: 18px; height: 18px; min-width: 18px; border-radius: 50%; border: 1.5px solid var(--border-strong); padding: 0; cursor: pointer; }
+  .swatch:hover { transform: scale(1.12); }
+  .swatch.s-blue { background: #5b87d6; } .swatch.s-green { background: #5d9b48; }
+  .swatch.s-red { background: #cf6655; } .swatch.s-amber { background: #c39a36; }
+  .swatch.s-purple { background: #8a6dc8; }
+  .swatch.s-default { background: var(--surface); position: relative; }
+  .swatch.s-default::after { content: '⃠'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 14px; }
+
+  /* ── per-node text size ──────────────────────────────── */
+  .node.fz-s .node-text { font-size: 12px; }
+  .node.fz-l .node-text { font-size: 18px; }
+  .node.root.fz-l .node-text { font-size: 19px; }
+
+  /* ── toolbar select (templates) + toggle ─────────────── */
+  .toolbar select {
+    font: inherit; font-size: 13px; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    padding: 6px 8px; cursor: pointer;
+  }
+  button.toggle-on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+  /* ── optional local-AI drawer ────────────────────────── */
+  #ai-panel { position: fixed; top: 0; right: 0; width: 360px; max-width: 92vw; height: 100%; background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow-lg); z-index: 1200; display: flex; flex-direction: column; }
+  #ai-panel.hidden, #ai-panel .hidden { display: none; }
+  .ai-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .ai-head strong { flex: 0 0 auto; }
+  .ai-head .status { flex: 1; font-size: 12px; color: var(--ink-2); }
+  .ai-body { padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  .ai-body label { font-size: 12px; color: var(--ink-2); display: block; }
+  .ai-body select, .ai-body textarea { width: 100%; font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 7px 9px; margin-top: 4px; }
+  .ai-body textarea { resize: vertical; min-height: 90px; }
+  .ai-fence { font-size: 12px; line-height: 1.5; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; }
+  .ai-fence b { color: var(--ink); }
+  .ai-section h3 { font-size: 13px; margin-bottom: 6px; }
+  .ai-section p.note { font-size: 12px; color: var(--ink-2); margin: 0 0 7px; }
+  .ai-body button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  #ai-distill-preview { font-size: 12px; white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; max-height: 30vh; overflow: auto; }
+  #ai-status.err { color: var(--danger); }
+
+  @media print {
+    .toolbar, #hint, #ai-panel { display: none !important; }
+    html, body, #canvas { overflow: visible; height: auto; }
+    #canvas { background: none; }
+    .node-img-rm { display: none !important; }
+  }
+</style>
+</head>
+<body class="light">
+
+<div class="toolbar ui">
+  <input id="map-title" class="title" placeholder="Untitled map" aria-label="Map title" />
+  <div class="sep"></div>
+  <button onclick="newMind()">New</button>
+  <button onclick="openMind()">Open</button>
+  <button onclick="saveMind()" title="Save (Ctrl+S)">Save</button>
+  <button onclick="saveMindAs()">Save As</button>
+  <button onclick="printMind()">Print</button>
+  <select id="tpl-select" title="Start from a template" onchange="loadTemplate(this.value); this.selectedIndex = 0;">
+    <option value="">Templates…</option>
+    <option value="system-arch">System architecture</option>
+    <option value="rca">Incident postmortem (RCA)</option>
+    <option value="roadmap">Product roadmap</option>
+  </select>
+  <div class="sep"></div>
+  <button class="primary" onclick="addChild(selectedId)" title="Add child (Tab)">+ Child</button>
+  <button onclick="addSibling(selectedId)" title="Add sibling (Enter)">+ Sibling</button>
+  <button onclick="startLink(selectedId)" title="Draw a labeled cross-link to another node">Link</button>
+  <button onclick="pickImageForSelected()" title="Add an image to the selected node (paste with Ctrl+V too)">Image</button>
+  <button onclick="deleteSelected()" title="Delete node (Del)">Delete</button>
+  <div class="sep"></div>
+  <button class="icon" id="undo-btn" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↶</button>
+  <button class="icon" id="redo-btn" onclick="redo()" title="Redo (Ctrl+Y)" disabled>↷</button>
+  <div class="sep"></div>
+  <button class="swatch s-blue" onclick="setNodeColor('blue')" title="Blue"></button>
+  <button class="swatch s-green" onclick="setNodeColor('green')" title="Green"></button>
+  <button class="swatch s-red" onclick="setNodeColor('red')" title="Red"></button>
+  <button class="swatch s-amber" onclick="setNodeColor('amber')" title="Amber"></button>
+  <button class="swatch s-purple" onclick="setNodeColor('purple')" title="Purple"></button>
+  <button class="swatch s-default" onclick="setNodeColor('default')" title="No color"></button>
+  <div class="sep"></div>
+  <button class="icon" onclick="setNodeFont(-1)" title="Smaller text">A−</button>
+  <button class="icon" onclick="setNodeFont(1)" title="Larger text">A+</button>
+  <select id="kind-sel" onchange="setNodeKind(this.value); this.selectedIndex=0;" title="Logic-gate shape for the selected node" style="font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:6px 8px;cursor:pointer">
+    <option value="">shape…</option><option value="and">AND</option><option value="or">OR</option><option value="xor">XOR</option><option value="not">NOT</option><option value="mux">MUX</option><option value="none">- none</option>
+  </select>
+  <div class="spacer"></div>
+  <span id="status"></span>
+  <div class="sep"></div>
+  <button onclick="AI.show()" title="Local AI - optional, needs Ollama. Proposes; you decide.">✦ AI</button>
+  <button onclick="tidyBranch(selectedId)" title="Tidy the selected node's branch (Ctrl+Z to undo)">Tidy</button>
+  <button onclick="tidyAll()" title="Tidy the whole map (Ctrl+Z to undo)">Tidy all</button>
+  <button id="snap-btn" onclick="toggleSnap()" title="Snap nodes to a grid when you move them">Snap</button>
+  <button class="icon" onclick="zoomBy(0.9)" title="Zoom out (Ctrl -)">−</button>
+  <span class="zoom-label" id="zoom-label">100%</span>
+  <button class="icon" onclick="zoomBy(1.1)" title="Zoom in (Ctrl +)">+</button>
+  <button onclick="fitView()" title="Fit all (Ctrl 0)">Fit</button>
+  <button class="icon" id="theme-btn" onclick="toggleTheme()" title="Light / dark">☾</button>
+</div>
+
+<div id="canvas">
+  <div id="world">
+    <svg id="edges"></svg>
+  </div>
+  <div id="hint">
+    <b>Drag</b> background to pan · <b>scroll</b> to zoom · <kbd>Tab</kbd> child · <kbd>Enter</kbd> sibling · <kbd>F2</kbd> edit · <kbd>Del</kbd> delete · <kbd>Space</kbd> collapse
+  </div>
+</div>
+
+<!-- OPTIONAL LOCAL-AI DRAWER -->
+<div id="ai-panel" class="hidden ui">
+  <div class="ai-head">
+    <strong>✦ Local AI</strong>
+    <span class="status" id="ai-status">…</span>
+    <button onclick="AI.hide()" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--ink-2)">✕</button>
+  </div>
+  <div class="ai-body">
+    <div class="ai-fence"><b>The AI proposes; you decide.</b> It expands a node into sub-ideas and distills pasted text into a map - but never changes your map without your approval. Talks only to your local Ollama at <code>localhost:11434</code>; nothing leaves your machine.</div>
+    <label>Model <select id="ai-model"><option value="">(detecting…)</option></select></label>
+
+    <div class="ai-section">
+      <h3>Expand node</h3>
+      <p class="note">Breaks the <b>selected</b> node into 3-5 sub-components, added as children you then arrange.</p>
+      <div style="display:flex;gap:8px">
+        <button class="primary" id="ai-expand-btn">Expand selected</button>
+        <button id="ai-stop" class="hidden">Stop</button>
+      </div>
+    </div>
+
+    <div class="ai-section">
+      <h3>Distill to map</h3>
+      <p class="note">Paste an RFC, notes, or a transcript; the model drafts a nested map you review before adding.</p>
+      <textarea id="ai-distill-input" placeholder="Paste text to turn into a map…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="primary" id="ai-distill-btn">Draft map</button>
+      </div>
+      <div id="ai-distill-preview" class="hidden" style="margin-top:10px"></div>
+      <button class="primary hidden" id="ai-distill-apply" style="margin-top:8px">Add to map</button>
+    </div>
+
+    <div class="ai-section">
+      <h3>State machine from code</h3>
+      <p class="note">Paste code (Python / JS / pseudocode); the model plots the FSM - states as nodes, transitions as labeled signal-flow edges. A diagram, not a simulation.</p>
+      <textarea id="ai-sm-input" placeholder="Paste code with an FSM…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="primary" id="ai-sm-btn">Plot states</button>
+      </div>
+      <div id="ai-sm-preview" class="hidden" style="margin-top:10px"></div>
+      <button class="primary hidden" id="ai-sm-apply" style="margin-top:8px">Add to canvas</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════
+// Shared LocalOffice core - inlined verbatim (single-file rule: no <script src>).
+// ════════════════════════════════════════════════════════════════════
+const LocalOffice = (function () {
+  'use strict';
+  const FORMAT = 'localoffice/v1', FORMAT_PREFIX = 'localoffice/', FILE_EXT = '.localoffice.json';
+  const TYPES = ['sheet', 'plan', 'flashcards', 'mindmap', 'slides'];
+  function nowISO() { return new Date().toISOString(); }
+  function uuid() {
+    const c = (typeof crypto !== 'undefined') ? crypto : null;
+    if (c && typeof c.randomUUID === 'function') { try { return c.randomUUID(); } catch (_) {} }
+    let rnd;
+    if (c && typeof c.getRandomValues === 'function') { const b = new Uint8Array(16); c.getRandomValues(b); b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80; rnd = (i) => b[i]; }
+    else { const a = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256)); a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80; rnd = (i) => a[i]; }
+    const h = []; for (let i = 0; i < 16; i++) h.push((rnd(i) + 0x100).toString(16).slice(1));
+    return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+  }
+  function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function freshBody(type) {
+    switch (type) { case 'sheet': return { sheets: [] }; case 'plan': return { tracks: [] }; case 'flashcards': return { deck: { name: '' }, scheduler: 'fsrs-lite', cards: [] }; case 'mindmap': return { nodes: [], edges: [] }; case 'slides': return { theme: {}, slides: [] }; default: return {}; }
+  }
+  function createEnvelope(type, opts = {}) {
+    if (!TYPES.includes(type)) throw new Error(`createEnvelope: unknown type "${type}"`);
+    const ts = nowISO();
+    return { format: FORMAT, type, meta: { id: opts.id || uuid(), title: opts.title || '', created: ts, modified: ts, app: opts.app || '', tags: Array.isArray(opts.tags) ? opts.tags.slice() : [] }, body: isPlainObject(opts.body) ? opts.body : freshBody(type) };
+  }
+  function validate(obj) {
+    const errors = [], warnings = [];
+    if (!isPlainObject(obj)) return { ok: false, errors: ['Not a JSON object.'], warnings, type: null, formatVersion: null };
+    let formatVersion = null;
+    if (typeof obj.format !== 'string') errors.push('Missing "format" field.');
+    else if (!obj.format.startsWith(FORMAT_PREFIX)) errors.push(`Unrecognized format "${obj.format}".`);
+    else { formatVersion = obj.format.slice(FORMAT_PREFIX.length); if (obj.format !== FORMAT) warnings.push(`Format "${obj.format}" differs.`); }
+    if (typeof obj.type !== 'string' || !obj.type) errors.push('Missing "type" field.');
+    else if (!TYPES.includes(obj.type)) warnings.push(`Unknown type "${obj.type}".`);
+    if (!isPlainObject(obj.meta)) errors.push('Missing or invalid "meta".');
+    if (!isPlainObject(obj.body)) warnings.push('Missing or invalid "body".');
+    return { ok: errors.length === 0, errors, warnings, type: typeof obj.type === 'string' ? obj.type : null, formatVersion };
+  }
+  function normalize(obj) {
+    if (!isPlainObject(obj.meta)) obj.meta = {};
+    const m = obj.meta;
+    if (typeof m.id !== 'string' || !m.id) m.id = uuid();
+    if (typeof m.title !== 'string') m.title = '';
+    if (typeof m.created !== 'string') m.created = nowISO();
+    if (typeof m.modified !== 'string') m.modified = m.created;
+    if (typeof m.app !== 'string') m.app = '';
+    if (!Array.isArray(m.tags)) m.tags = [];
+    if (!isPlainObject(obj.body)) obj.body = freshBody(obj.type);
+    return obj;
+  }
+  class LoadError extends Error { constructor(m, d) { super(m); this.name = 'LoadError'; this.detail = d; } }
+  function parse(text, opts = {}) {
+    let raw; try { raw = JSON.parse(text); } catch (e) { throw new LoadError('File is not valid JSON.', e.message); }
+    let r = validate(raw), obj = raw;
+    if (!r.ok && typeof opts.coerce === 'function') { const c = opts.coerce(raw); if (isPlainObject(c)) { obj = c; r = validate(obj); } }
+    if (!r.ok) throw new LoadError('Not a LocalOffice file: ' + r.errors.join(' '), r.errors);
+    normalize(obj); return { envelope: obj, warnings: r.warnings };
+  }
+  function stringify(env, pretty = true) { return JSON.stringify(env, null, pretty ? 2 : 0); }
+  function serialize(env, opts = {}) {
+    if (!isPlainObject(env)) throw new Error('serialize: not an object');
+    const r = validate(env); if (!r.ok) throw new Error('serialize: invalid - ' + r.errors.join(' '));
+    if (opts.touch !== false) { if (!isPlainObject(env.meta)) env.meta = {}; env.meta.modified = nowISO(); }
+    return stringify(env, opts.pretty !== false);
+  }
+  function slugify(s) { return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); }
+  function suggestedName(env) { return (slugify(env && env.meta && env.meta.title) || (env && env.type) || 'untitled') + FILE_EXT; }
+  function supportsFS() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; }
+  const PICKER_TYPES = [{ description: 'LocalOffice file', accept: { 'application/json': ['.json'] } }];
+  function pickFileFallback() { return new Promise((res, rej) => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json'; i.style.display = 'none'; i.addEventListener('change', () => { const f = i.files && i.files[0]; i.remove(); f ? res(f) : rej(new Error('No file selected.')); }); document.body.appendChild(i); i.click(); }); }
+  function isEmbedded() { return typeof window !== 'undefined' && window.parent && window.parent !== window; }
+  // Embedded in the Hub: file pickers are blocked in a cross-origin subframe, so
+  // delegate the write to the Hub (top frame), which holds the directory handle
+  // and saves in place - even over file://.
+  function hubSave(text, name, asNew) {
+    return new Promise((resolve, reject) => {
+      const id = 'lo' + Math.random().toString(36).slice(2);
+      function on(e) { const m = e.data; if (!m || m.proto !== 'localoffice' || m.type !== 'saved' || m.id !== id) return; window.removeEventListener('message', on); if (m.ok) resolve({ handle: null, name: m.name || name }); else if (m.error === 'cancelled') { const a = new Error('cancelled'); a.name = 'AbortError'; reject(a); } else reject(new Error(m.error || 'Save failed')); }
+      window.addEventListener('message', on);
+      window.parent.postMessage({ proto: 'localoffice', type: 'save', id, text, name, asNew: !!asNew }, '*');
+    });
+  }
+  async function openFile(opts = {}) {
+    if (supportsFS()) {
+      try { const [h] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false }); const f = await h.getFile(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: h, name: f.name, warnings }; }
+      catch (e) { if (e && e.name === 'AbortError') throw e; /* picker blocked (cross-origin iframe) → upload fallback */ }
+    }
+    const f = await pickFileFallback(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: null, name: f.name, warnings };
+  }
+  async function saveFile(env, handle, opts = {}) {
+    const text = serialize(env, opts);
+    if (isEmbedded()) return hubSave(text, suggestedName(env), false);
+    if (handle && typeof handle.createWritable === 'function') { const w = await handle.createWritable(); await w.write(text); await w.close(); return { handle, name: handle.name }; }
+    return saveFileAs(env, suggestedName(env), { ...opts, _text: text });
+  }
+  async function saveFileAs(env, suggested, opts = {}) {
+    const text = opts._text != null ? opts._text : serialize(env, opts); const name = suggested || suggestedName(env);
+    if (isEmbedded()) return hubSave(text, name, true);
+    if (supportsFS()) { const h = await window.showSaveFilePicker({ suggestedName: name, types: PICKER_TYPES }); const w = await h.createWritable(); await w.write(text); await w.close(); return { handle: h, name: h.name }; }
+    download(text, name); return { handle: null, name };
+  }
+  function download(text, filename) { const b = new Blob([text], { type: 'application/json' }), u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || ('untitled' + FILE_EXT); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 0); }
+  return { FORMAT, FILE_EXT, TYPES, uuid, nowISO, createEnvelope, validate, normalize, parse, stringify, serialize, slugify, suggestedName, LoadError, supportsFS, openFile, saveFile, saveFileAs, download };
+})();
+
+// ════════════════════════════════════════════════════════════════════
+// localMindMap - state + helpers
+// ════════════════════════════════════════════════════════════════════
+const APP = 'localmindmap@1.0';
+const DATA_KEY = 'localmindmap_data_v1';
+const THEME_KEY = 'localmindmap_theme';
+const SNAP_KEY = 'localmindmap_snap';
+const GRID = 20;          // snap-to-grid step (px, world coords)
+
+let data = { nodes: [], edges: [] };   // the mindmap body (source of truth; unknown fields preserved)
+let mapTitle = 'Untitled map';
+let selectedId = null;
+let fileHandle = null;
+let panX = 0, panY = 0, zoom = 1;
+let linkFrom = null;
+let snap = false;
+let undoStack = [], redoStack = [];   // full-state snapshots for undo / redo
+
+const canvas = document.getElementById('canvas');
+const world = document.getElementById('world');
+const svg = document.getElementById('edges');
+
+function uid(prefix) { return (prefix || 'n') + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function storageGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function storageSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+
+function byId(id) { return data.nodes.find(n => n.id === id) || null; }
+function childrenOf(id) { return data.nodes.filter(n => n.parent === id); }
+// The four helpers below walk the parent/child graph. A corrupt file (hand-edited,
+// a buggy exporter, a merge that swaps an id) can contain a self-parent or a parent
+// CYCLE - which a plain walk loops on forever, hanging the tab on open (render runs
+// in openMind). Every walk is bounded by a visited set so a cycle terminates.
+function isHidden(node) {
+  let p = node.parent; const seen = new Set();
+  while (p && !seen.has(p)) { seen.add(p); const pn = byId(p); if (!pn) break; if (pn.collapsed) return true; p = pn.parent; }
+  return false;
+}
+function descendantCount(id) {
+  let c = 0; const seen = new Set([id]); const stack = childrenOf(id).slice();
+  while (stack.length) { const n = stack.pop(); if (seen.has(n.id)) continue; seen.add(n.id); c++; stack.push(...childrenOf(n.id)); }
+  return c;
+}
+function setStatus(msg, err) { const s = document.getElementById('status'); s.textContent = msg || ''; s.classList.toggle('err', !!err); }
+
+// ── persistence ──────────────────────────────────────────────────────
+function saveLocal() {
+  // Embedded in the Hub the FILE is the source of truth - skip the localStorage
+  // autosave so we don't leave a stale single-slot shadow across many opened files.
+  if (window.parent !== window) return;
+  storageSet(DATA_KEY, JSON.stringify({ title: mapTitle, body: data }));
+}
+function loadLocal() {
+  const raw = storageGet(DATA_KEY);
+  if (!raw) { newMind(true); return; }
+  try {
+    const o = JSON.parse(raw);
+    if (o && o.body && Array.isArray(o.body.nodes)) {
+      data = o.body; if (!Array.isArray(data.edges)) data.edges = [];
+      mapTitle = o.title || 'Untitled map';
+      selectedId = data.nodes[0] ? data.nodes[0].id : null;
+      return;
+    }
+  } catch (e) {}
+  newMind(true);
+}
+
+function newMind(silent) {
+  if (!silent && data.nodes.length > 1 && !confirm('Start a new map? Unsaved changes will be lost.')) return;
+  mapTitle = 'Untitled map';
+  const root = { id: uid('n'), text: 'Central idea', x: 700, y: 420, parent: null, collapsed: false };
+  data = { nodes: [root], edges: [] };
+  selectedId = root.id;
+  fileHandle = null;
+  if (!silent) { saveLocal(); render(); fitView(); editNode(root.id); }
+}
+
+// ── envelope IO ──────────────────────────────────────────────────────
+function exportData() { return LocalOffice.createEnvelope('mindmap', { title: mapTitle || 'Untitled map', app: APP, body: data }); }
+function importData(env) { data = env.body; if (!Array.isArray(data.nodes)) data.nodes = []; if (!Array.isArray(data.edges)) data.edges = []; data.nodes.forEach((n, i) => { if (!Number.isFinite(n.x)) n.x = i * 40; if (!Number.isFinite(n.y)) n.y = i * 30; }); mapTitle = (env.meta && env.meta.title) || 'Untitled map'; selectedId = data.nodes[0] ? data.nodes[0].id : null; }
+
+async function openMind() {
+  try {
+    const res = await LocalOffice.openFile({ coerce: raw => (raw && Array.isArray(raw.nodes)) ? LocalOffice.createEnvelope('mindmap', { title: raw.title || '', app: APP, body: raw }) : null });
+    if (res.envelope.type !== 'mindmap') { const t = res.envelope.type, tool = toolForType(t); alert('This is a "' + t + '" file' + (tool ? ' - open it in ' + tool + '.' : ', not a mindmap.')); return; }
+    if (!res.envelope.body || !Array.isArray(res.envelope.body.nodes)) { alert('That file doesn\'t look like a valid mindmap.'); return; }
+    if (data.nodes.length > 1 && !confirm('Replace your current map with this file?')) return;
+    importData(res.envelope);
+    fileHandle = res.handle;
+    saveLocal(); render(); fitView(); setStatus('Opened ' + res.name);
+  } catch (e) { if (e && e.name !== 'AbortError') alert('Open failed: ' + e.message); }
+}
+async function saveMind() {
+  try { const res = await LocalOffice.saveFile(exportData(), fileHandle); fileHandle = res.handle; setStatus('Saved' + (res.name ? ' · ' + res.name : '')); }
+  catch (e) { if (e && e.name !== 'AbortError') alert('Save failed: ' + e.message); }
+}
+async function saveMindAs() {
+  try { const env = exportData(); const res = await LocalOffice.saveFileAs(env, LocalOffice.suggestedName(env)); fileHandle = res.handle; setStatus('Saved · ' + res.name); }
+  catch (e) { if (e && e.name !== 'AbortError') alert('Save failed: ' + e.message); }
+}
+function printMind() { window.print(); }
+
+// ── images: re-encode through a <canvas> → strips EXIF/GPS/metadata + downscales ──
+const MAX_IMG_DIM = 1600, IMG_QUALITY = 0.85;
+const kb = (dataURI) => { const i = String(dataURI).indexOf(','); return Math.round((String(dataURI).length - i - 1) * 0.75 / 1024); };
+function processImageFile(file, maxDim = MAX_IMG_DIM) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (!w || !h) return reject(new Error('Unsupported image'));
+        const scale = Math.min(1, maxDim / Math.max(w, h));
+        w = Math.round(w * scale); h = Math.round(h * scale);
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        const keepAlpha = /png|svg|webp|gif/i.test(file.type || '');
+        resolve(cv.toDataURL(keepAlpha ? 'image/png' : 'image/jpeg', IMG_QUALITY)); // canvas output carries NO source metadata
+      };
+      img.onerror = () => reject(new Error('Could not decode image'));
+      img.src = fr.result;
+    };
+    fr.onerror = () => reject(new Error('Could not read file'));
+    fr.readAsDataURL(file);
+  });
+}
+async function setNodeImage(node, file) {
+  if (!node || !file || (file.type || '').indexOf('image') !== 0) return;
+  try {
+    const img = await processImageFile(file);
+    pushUndo(); node.image = img;
+    saveLocal(); render();
+    setStatus('Image added (' + kb(node.image) + ' KB, metadata stripped).');
+  } catch (e) { setStatus('Image failed: ' + e.message, true); }
+}
+function pickImageForSelected() {
+  if (!selectedId) { setStatus('Select a node first.', true); return; }
+  const node = byId(selectedId); if (!node) return;
+  const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.style.display = 'none';
+  i.addEventListener('change', () => { const f = i.files && i.files[0]; i.remove(); if (f) setNodeImage(node, f); });
+  document.body.appendChild(i); i.click();
+}
+function removeNodeImage(id) { const n = byId(id); if (!n) return; pushUndo(); delete n.image; saveLocal(); render(); }
+// ── LocalOffice Clipboard Protocol (paste) ───────────────────────────
+function clipDecode(b64) { return JSON.parse(decodeURIComponent(escape(atob(b64)))); }
+function readClip(e) {
+  let fragment = null;
+  const html = e.clipboardData ? e.clipboardData.getData('text/html') : '';
+  if (html) { const m = html.match(/data-localoffice="([^"]*)"/); if (m) { try { fragment = clipDecode(m[1]); } catch (_) {} } }
+  return { fragment, text: e.clipboardData ? e.clipboardData.getData('text/plain') : '' };
+}
+// A clipboard grid (from LocalSheets) or TSV/plain text → one node label per row.
+function clipToNodeTexts(clip) {
+  if (clip.fragment && clip.fragment.kind === 'grid' && Array.isArray(clip.fragment.grid))
+    return clip.fragment.grid.map(row => row.filter(c => String(c).trim() !== '').join('  ')).filter(s => s.trim());
+  if (clip.fragment && clip.fragment.kind === 'nodes' && Array.isArray(clip.fragment.nodes))
+    return clip.fragment.nodes.map(s => String(s).trim()).filter(Boolean);
+  const text = (clip.text || '').replace(/\r\n/g, '\n').trim();
+  if (!text) return [];
+  return text.split('\n').map(l => l.split('\t').map(c => c.trim()).filter(Boolean).join('  ')).filter(Boolean);
+}
+function addNodeCluster(texts) {
+  if (!texts.length) return;
+  pushUndo();
+  if (selectedId && byId(selectedId)) {
+    texts.forEach(t => createChild(selectedId, t));   // drop under the selected node
+  } else {
+    let maxX = -Infinity, minY = Infinity;
+    data.nodes.forEach(n => { maxX = Math.max(maxX, n.x); minY = Math.min(minY, n.y); });
+    if (!isFinite(maxX)) { maxX = 400; minY = 300; }
+    const root = { id: uid('n'), text: texts[0], x: maxX + 340, y: minY, parent: null, collapsed: false };
+    data.nodes.push(root);
+    texts.slice(1).forEach(t => createChild(root.id, t));
+    layoutTree(root.id, root.x, root.y);
+    selectedId = root.id;
+  }
+  saveLocal(); render(); fitView();
+  setStatus('Pasted ' + texts.length + ' node(s).');
+}
+document.addEventListener('paste', e => {
+  const ae = document.activeElement;
+  if (ae && (ae.getAttribute('contenteditable') === 'true' || ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  for (const it of items) {                            // an image goes onto the selected node (as before)
+    if (it.type && it.type.indexOf('image') === 0) { if (selectedId) { const f = it.getAsFile(); if (f) { e.preventDefault(); setNodeImage(byId(selectedId), f); } } return; }
+  }
+  const texts = clipToNodeTexts(readClip(e));           // data → a cluster of nodes
+  if (texts.length) { e.preventDefault(); addNodeCluster(texts); }
+});
+
+// ── structural edits ─────────────────────────────────────────────────
+// createChild adds a node WITHOUT entering edit mode or re-rendering - the
+// shared primitive used by the + Child button and the AI features.
+function createChild(parentId, text) {
+  const p = byId(parentId); if (!p) return null;
+  if (p.collapsed) p.collapsed = false;
+  const n = childrenOf(parentId).length;              // existing children → fan the new one out below them
+  const node = { id: uid('n'), text: text || 'New idea', x: p.x + 220, y: p.y + n * 86, parent: parentId, collapsed: false };
+  data.nodes.push(node);
+  return node;
+}
+function addChild(parentId) {
+  if (!byId(parentId)) return null;
+  pushUndo();
+  const node = createChild(parentId); if (!node) return null;
+  selectedId = node.id;
+  saveLocal(); render(); editNode(node.id);
+  return node;
+}
+function setNodeColor(color) {
+  if (!selectedId) { setStatus('Select a node first.', true); return; }
+  const n = byId(selectedId); if (!n) return;
+  pushUndo();
+  if (!color || color === 'default') delete n.color; else n.color = color;
+  saveLocal(); render();
+}
+// per-node text size: cycle s ↔ m ↔ l (m is the default, stored as no field)
+const SIZES = ['s', 'm', 'l'];
+function setNodeFont(delta) {
+  if (!selectedId) { setStatus('Select a node first.', true); return; }
+  const n = byId(selectedId); if (!n) return;
+  const cur = SIZES.indexOf(n.size || 'm');
+  const next = SIZES[clamp(cur + delta, 0, SIZES.length - 1)];
+  if (next === (n.size || 'm')) return;   // no change at the min/max end
+  pushUndo();
+  if (next === 'm') delete n.size; else n.size = next;
+  saveLocal(); render();
+}
+// per-node logic-gate shape (a diagram affordance - purely visual, no semantics)
+const GATE_KINDS = ['and', 'or', 'xor', 'not', 'mux'];
+function isGate(k) { return GATE_KINDS.indexOf(k) !== -1; }
+function gateGlyph(kind) {
+  const g = {
+    and: '<path d="M3 2 H13 A8 8 0 0 1 13 18 H3 Z"/>',
+    or: '<path d="M2 2 Q9 10 2 18 Q15 18 23 10 Q15 2 2 2 Z"/>',
+    xor: '<path d="M5 2 Q12 10 5 18 Q18 18 25 10 Q18 2 5 2 Z"/><path d="M2 2 Q9 10 2 18"/>',
+    not: '<path d="M4 2 L4 18 L18 10 Z"/><circle cx="21" cy="10" r="2"/>',
+    mux: '<path d="M5 2 L17 6 L17 14 L5 18 Z"/>',
+  };
+  return '<svg class="gate-glyph" viewBox="0 0 26 20" aria-hidden="true">' + (g[kind] || '') + '</svg>';
+}
+function setNodeKind(kind) {
+  if (!selectedId) { setStatus('Select a node first.', true); return; }
+  const n = byId(selectedId); if (!n) return;
+  pushUndo();
+  if (!kind || kind === 'none') delete n.kind; else n.kind = kind;
+  saveLocal(); render();
+}
+function snapNode(n) { if (snap) { n.x = Math.round(n.x / GRID) * GRID; n.y = Math.round(n.y / GRID) * GRID; } }
+function toggleSnap() { snap = !snap; storageSet(SNAP_KEY, snap ? '1' : '0'); applySnapButton(); }
+function applySnapButton() { const b = document.getElementById('snap-btn'); if (b) b.classList.toggle('toggle-on', snap); }
+// which sister tool owns a given envelope type (for a friendly wrong-file message)
+function toolForType(t) { return ({ plan: 'LocalPlan', sheet: 'LocalSheets', flashcards: 'localCards', slides: 'localDeck' })[t] || null; }
+
+// Tidy placement of one subtree at insertion time (templates + AI distill).
+// depth → x, leaf order → y, each parent centered on its children. This only
+// positions the nodes passed in - it never re-flows the user's existing map
+// (a global auto-layout stays out of scope by design).
+function layoutTree(rootId, x0, y0, hgap, vgap) {
+  hgap = hgap || 230; vgap = vgap || 74; let row = 0;
+  (function place(id, depth, seen) {
+    if (seen.has(id)) return; seen.add(id);   // cycle guard: never recurse a node twice (no stack overflow)
+    const node = byId(id); if (!node) return;
+    node.x = x0 + depth * hgap;
+    const kids = childrenOf(id).filter(k => !seen.has(k.id));
+    if (!kids.length) { node.y = y0 + row * vgap; row++; }
+    else { kids.forEach(k => place(k.id, depth + 1, seen)); node.y = (byId(kids[0].id).y + byId(kids[kids.length - 1].id).y) / 2; }
+  })(rootId, 0, new Set());
+}
+function subtreeIds(id) { const out = [id], seen = new Set([id]), st = childrenOf(id).slice(); while (st.length) { const x = st.pop(); if (seen.has(x.id)) continue; seen.add(x.id); out.push(x.id); st.push(...childrenOf(x.id)); } return out; }
+
+// full-state undo / redo: snapshot nodes + edges + title before each change.
+function snapshot() { return JSON.stringify({ nodes: data.nodes, edges: data.edges, mapTitle }); }
+function histPush(snap) { undoStack.push(snap); if (undoStack.length > 80) undoStack.shift(); redoStack = []; updateUndoButtons(); }
+function pushUndo() { histPush(snapshot()); }   // call BEFORE a mutation (drag/edit capture their own pre-snapshot)
+function restoreState(s) { const o = JSON.parse(s); data.nodes = o.nodes || []; data.edges = o.edges || []; if (typeof o.mapTitle === 'string') mapTitle = o.mapTitle; if (!byId(selectedId)) selectedId = data.nodes[0] ? data.nodes[0].id : null; updateUndoButtons(); }
+function undo() { if (!undoStack.length) { setStatus('Nothing to undo.'); return; } redoStack.push(snapshot()); restoreState(undoStack.pop()); saveLocal(); render(); setStatus('Undo'); }
+function redo() { if (!redoStack.length) { setStatus('Nothing to redo.'); return; } undoStack.push(snapshot()); restoreState(redoStack.pop()); saveLocal(); render(); setStatus('Redo'); }
+function updateUndoButtons() { const u = document.getElementById('undo-btn'), r = document.getElementById('redo-btn'); if (u) u.disabled = !undoStack.length; if (r) r.disabled = !redoStack.length; }
+function tidyBranch(id) {
+  const n = byId(id); if (!n) { setStatus('Select a node first.', true); return; }
+  pushUndo();
+  const ox = n.x, oy = n.y; layoutTree(id, n.x, n.y);              // tidy descendants…
+  const dx = ox - n.x, dy = oy - n.y; subtreeIds(id).forEach(i => { const m = byId(i); m.x += dx; m.y += dy; }); // …keep the branch root pinned
+  saveLocal(); render(); setStatus('Tidied branch · Ctrl+Z to undo.');
+}
+function tidyAll() {
+  pushUndo();
+  let y = 140;
+  data.nodes.filter(n => !n.parent).forEach(r => { layoutTree(r.id, 220, y); y = Math.max(...subtreeIds(r.id).map(i => byId(i).y), y) + 150; });
+  saveLocal(); render(); fitView(); setStatus('Tidied the map · Ctrl+Z to undo.');
+}
+
+// ── starter templates (neutral / engineering-generic) ─────────────────
+function buildFromSpec(spec) {
+  const nodes = [];
+  (function add(s, parent) {
+    const node = { id: uid('n'), text: s.text, x: 0, y: 0, parent, collapsed: false };
+    if (s.color) node.color = s.color;
+    if (s.size) node.size = s.size;
+    nodes.push(node);
+    (s.children || []).forEach(c => add(c, node.id));
+  })(spec, null);
+  return nodes;
+}
+const TEMPLATES = {
+  'system-arch': { title: 'System architecture', spec: {
+    text: 'Edge Device', size: 'l', children: [
+      { text: 'Sensors / Input', color: 'green', children: [{ text: 'Camera' }, { text: 'IMU' }] },
+      { text: 'Compute / NPU', color: 'blue', children: [{ text: 'Inference runtime' }, { text: 'Scheduler' }] },
+      { text: 'Memory', color: 'amber', children: [{ text: 'Model store' }] },
+      { text: 'Output / Actuation', color: 'purple' },
+      { text: 'Power', color: 'red', children: [{ text: 'Battery / budget' }] }
+    ] } },
+  'rca': { title: 'Incident postmortem', spec: {
+    text: 'Outage Event', size: 'l', children: [
+      { text: 'Detection', color: 'blue', children: [{ text: 'Alert fired' }, { text: 'Time to detect' }] },
+      { text: 'Root cause', color: 'red', children: [{ text: 'Trigger' }, { text: 'Contributing factors' }] },
+      { text: 'Mitigation', color: 'amber', children: [{ text: 'Immediate fix' }] },
+      { text: 'Prevention', color: 'green', children: [{ text: 'Action items' }, { text: 'Owners' }] }
+    ] } },
+  'roadmap': { title: 'Product roadmap', spec: {
+    text: 'Product Vision', size: 'l', children: [
+      { text: 'Now', color: 'green', children: [{ text: 'Deliverable 1' }, { text: 'Deliverable 2' }] },
+      { text: 'Next', color: 'blue', children: [{ text: 'Candidate feature' }] },
+      { text: 'Later', color: 'amber', children: [{ text: 'Exploration' }] },
+      { text: 'Backlog', color: 'purple' }
+    ] } }
+};
+function loadTemplate(key) {
+  if (!key) return;
+  const tpl = TEMPLATES[key]; if (!tpl) return;
+  if (data.nodes.length > 1 && !confirm('Replace your current map with the "' + tpl.title + '" template?')) return;
+  pushUndo();
+  const nodes = buildFromSpec(tpl.spec);
+  data = { nodes, edges: [] };
+  mapTitle = tpl.title;
+  layoutTree(nodes[0].id, 220, 140);
+  selectedId = nodes[0].id;
+  fileHandle = null;
+  saveLocal(); render(); fitView();
+  setStatus('Loaded the "' + tpl.title + '" template.');
+}
+function addSibling(id) {
+  const node = byId(id); if (!node) return null;
+  if (node.parent) return addChild(node.parent);   // addChild pushes its own undo step
+  pushUndo();
+  const sib = { id: uid('n'), text: 'New idea', x: node.x, y: node.y + 110, parent: null, collapsed: false };
+  data.nodes.push(sib);
+  selectedId = sib.id;
+  saveLocal(); render(); editNode(sib.id);
+  return sib;
+}
+function deleteNode(id) {
+  const node = byId(id); if (!node) return;
+  if (data.nodes.length <= 1) { setStatus('Can’t delete the last node.', true); return; }
+  const remove = new Set([id]);
+  const stack = childrenOf(id).slice();
+  while (stack.length) { const n = stack.pop(); if (remove.has(n.id)) continue; remove.add(n.id); stack.push(...childrenOf(n.id)); }
+  if (remove.size > 1 && !confirm('Delete this node and ' + (remove.size - 1) + ' descendant(s)?')) return;
+  pushUndo();
+  data.nodes = data.nodes.filter(n => !remove.has(n.id));
+  data.edges = data.edges.filter(e => !remove.has(e.from) && !remove.has(e.to));
+  selectedId = node.parent && byId(node.parent) ? node.parent : (data.nodes[0] ? data.nodes[0].id : null);
+  saveLocal(); render();
+}
+function deleteSelected() { if (selectedId) deleteNode(selectedId); }
+function toggleCollapse(id) { const n = byId(id); if (!n || !childrenOf(id).length) return; pushUndo(); n.collapsed = !n.collapsed; saveLocal(); render(); }
+
+function startLink(id) {
+  if (!id) { setStatus('Select a node first, then click Link.', true); return; }
+  linkFrom = id; canvas.classList.add('linking');
+  setStatus('Click a target node to create a cross-link (Esc to cancel).');
+}
+function finishLink(targetId) {
+  if (!linkFrom || targetId === linkFrom) { cancelLink(); return; }
+  if (data.edges.some(e => (e.from === linkFrom && e.to === targetId) || (e.from === targetId && e.to === linkFrom))) { setStatus('Those nodes are already linked.'); cancelLink(); return; }
+  const label = (prompt('Link label (optional):') || '').trim();
+  const a = byId(linkFrom), b = byId(targetId);
+  const edge = { from: linkFrom, to: targetId, label };
+  if (a && b && isGate(a.kind) && isGate(b.kind)) { edge.fromPort = 'r'; edge.toPort = 'l'; } // signal flow out→in
+  pushUndo();
+  data.edges.push(edge);
+  cancelLink(); saveLocal(); render();
+}
+function cancelLink() { linkFrom = null; canvas.classList.remove('linking'); setStatus(''); }
+
+// ── view transform ───────────────────────────────────────────────────
+function applyView() { world.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')'; updateZoomLabel(); }
+function updateZoomLabel() { document.getElementById('zoom-label').textContent = Math.round(zoom * 100) + '%'; }
+function zoomAt(factor, cx, cy) {
+  const nz = clamp(zoom * factor, 0.2, 3);
+  const wx = (cx - panX) / zoom, wy = (cy - panY) / zoom;
+  zoom = nz; panX = cx - wx * zoom; panY = cy - wy * zoom;
+  applyView();
+}
+function zoomBy(factor) { const r = canvas.getBoundingClientRect(); zoomAt(factor, r.width / 2, r.height / 2); }
+function fitView() {
+  const vis = data.nodes.filter(n => !isHidden(n));
+  if (!vis.length) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  vis.forEach(n => { minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y); });
+  const pad = 140; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  const r = canvas.getBoundingClientRect();
+  const w = maxX - minX, h = maxY - minY;
+  zoom = clamp(Math.min(r.width / w, r.height / h), 0.2, 2);
+  panX = (r.width - (minX + maxX) * zoom) / 2;
+  panY = (r.height - (minY + maxY) * zoom) / 2;
+  applyView();
+}
+
+// ── rendering ────────────────────────────────────────────────────────
+let nodeSizes = {};  // transient: rendered px size per node id (for port anchoring)
+function edgePath(a, b) { const mx = (a.x + b.x) / 2; return 'M ' + a.x + ' ' + a.y + ' C ' + mx + ' ' + a.y + ', ' + mx + ' ' + b.y + ', ' + b.x + ' ' + b.y; }
+// anchor a point on a node's side (node x/y is its centre); used for signal-flow edges
+function anchorPoint(n, side) {
+  const sz = nodeSizes[n.id] || { w: 140, h: 40 }, hw = sz.w / 2, hh = sz.h / 2;
+  if (side === 'r') return { x: n.x + hw, y: n.y };
+  if (side === 'l') return { x: n.x - hw, y: n.y };
+  if (side === 't') return { x: n.x, y: n.y - hh };
+  if (side === 'b') return { x: n.x, y: n.y + hh };
+  return { x: n.x, y: n.y };
+}
+function portEdgePath(p1, p2) { const dx = Math.max(40, Math.abs(p2.x - p1.x) / 2); return 'M ' + p1.x + ' ' + p1.y + ' C ' + (p1.x + dx) + ' ' + p1.y + ', ' + (p2.x - dx) + ' ' + p2.y + ', ' + p2.x + ' ' + p2.y; }
+function drawEdges() {
+  let s = '';
+  data.nodes.forEach(n => {
+    if (!n.parent) return; const p = byId(n.parent); if (!p) return;
+    if (isHidden(n) || isHidden(p)) return;
+    s += '<path class="link" d="' + edgePath(p, n) + '"/>';
+  });
+  data.edges.forEach(e => {
+    const a = byId(e.from), b = byId(e.to); if (!a || !b || isHidden(a) || isHidden(b)) return;
+    let d, mx, my;
+    if (e.fromPort || e.toPort) {                       // port-anchored (signal flow): out → in
+      const p1 = anchorPoint(a, e.fromPort || 'c'), p2 = anchorPoint(b, e.toPort || 'c');
+      d = portEdgePath(p1, p2); mx = (p1.x + p2.x) / 2; my = (p1.y + p2.y) / 2;
+    } else { d = edgePath(a, b); mx = (a.x + b.x) / 2; my = (a.y + b.y) / 2; }
+    s += '<path class="xlink" d="' + d + '"/>';
+    if (e.label) s += '<text class="xlabel" x="' + mx + '" y="' + (my - 6) + '">' + escapeHtml(e.label) + '</text>';
+  });
+  svg.innerHTML = s;
+}
+function positionNode(el, n) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+
+function makeNode(n) {
+  const el = document.createElement('div');
+  const gate = isGate(n.kind);
+  el.className = 'node' + (n.parent ? '' : ' root') + (n.color ? ' c-' + n.color : '') + (n.size ? ' fz-' + n.size : '') + (gate ? ' gate' : '') + (n.id === selectedId ? ' sel' : '');
+  el.dataset.id = n.id;
+  positionNode(el, n);
+  if (gate) { const g = document.createElement('span'); g.innerHTML = gateGlyph(n.kind); el.appendChild(g.firstChild); }
+
+  if (n.image) {
+    const wrap = document.createElement('div'); wrap.className = 'node-img-wrap';
+    const im = document.createElement('img'); im.className = 'node-img'; im.src = n.image; im.alt = '';
+    im.addEventListener('mousedown', e => e.preventDefault()); // let the node drag, not the image
+    const rm = document.createElement('button'); rm.className = 'node-img-rm'; rm.textContent = '✕'; rm.title = 'Remove image';
+    rm.addEventListener('mousedown', e => e.stopPropagation());
+    rm.addEventListener('click', e => { e.stopPropagation(); removeNodeImage(n.id); });
+    wrap.appendChild(im); wrap.appendChild(rm); el.appendChild(wrap);
+  }
+
+  const txt = document.createElement('div');
+  txt.className = 'node-text';
+  txt.textContent = n.text;
+  el.appendChild(txt);
+
+  if (childrenOf(n.id).length) {
+    const tg = document.createElement('div');
+    tg.className = 'toggle';
+    tg.textContent = n.collapsed ? ('+' + descendantCount(n.id)) : '-';
+    tg.title = n.collapsed ? 'Expand' : 'Collapse';
+    tg.addEventListener('mousedown', e => e.stopPropagation());
+    tg.addEventListener('click', e => { e.stopPropagation(); toggleCollapse(n.id); });
+    el.appendChild(tg);
+  }
+
+  // drag / select
+  el.addEventListener('mousedown', e => {
+    if (txt.getAttribute('contenteditable') === 'true') return;
+    e.stopPropagation();
+    selectNode(n.id);
+    const sx = e.clientX, sy = e.clientY, ox = n.x, oy = n.y; let moved = false; const pre = snapshot();
+    function mm(ev) {
+      const dx = (ev.clientX - sx) / zoom, dy = (ev.clientY - sy) / zoom;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      n.x = ox + dx; n.y = oy + dy; positionNode(el, n); drawEdges();
+    }
+    function mu() {
+      document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu);
+      if (moved) { histPush(pre); snapNode(n); positionNode(el, n); drawEdges(); saveLocal(); } else onNodeClick(n.id);
+    }
+    document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+  });
+  // touch drag (tablets / field use) - mirrors the mouse path
+  el.addEventListener('touchstart', e => {
+    if (txt.getAttribute('contenteditable') === 'true') return;
+    if (e.touches.length !== 1 || e.target.closest('.toggle') || e.target.closest('.node-img-rm')) return;
+    e.stopPropagation();
+    const t = e.touches[0], sx = t.clientX, sy = t.clientY, ox = n.x, oy = n.y; let moved = false; const pre = snapshot();
+    selectNode(n.id);
+    function tm(ev) {
+      const tt = ev.touches[0]; const dx = (tt.clientX - sx) / zoom, dy = (tt.clientY - sy) / zoom;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      n.x = ox + dx; n.y = oy + dy; positionNode(el, n); drawEdges(); ev.preventDefault();
+    }
+    function te() { document.removeEventListener('touchmove', tm); document.removeEventListener('touchend', te); if (moved) { histPush(pre); snapNode(n); positionNode(el, n); drawEdges(); saveLocal(); } else onNodeClick(n.id); }
+    document.addEventListener('touchmove', tm, { passive: false }); document.addEventListener('touchend', te);
+  }, { passive: false });
+  el.addEventListener('dblclick', e => { e.stopPropagation(); editNode(n.id); });
+
+  // inline edit
+  txt.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); txt.blur(); }
+    else if (e.key === 'Escape') { txt.textContent = n.text; txt.blur(); }
+  });
+  txt.addEventListener('blur', () => {
+    txt.removeAttribute('contenteditable');
+    const nv = txt.textContent.trim() || 'Untitled';
+    if (nv !== n.text) { pushUndo(); n.text = nv; }   // pushUndo snapshots the pre-edit text
+    if (txt.textContent.trim() === '') txt.textContent = n.text;
+    saveLocal();
+  });
+
+  return el;
+}
+
+function render() {
+  document.getElementById('map-title').value = mapTitle;
+  world.querySelectorAll('.node').forEach(e => e.remove());
+  nodeSizes = {};
+  data.nodes.forEach(n => { if (!isHidden(n)) { const el = makeNode(n); world.appendChild(el); nodeSizes[n.id] = { w: el.offsetWidth, h: el.offsetHeight }; } });
+  drawEdges();
+}
+
+function selectNode(id) {
+  selectedId = id;
+  world.querySelectorAll('.node').forEach(e => e.classList.toggle('sel', e.dataset.id === id));
+}
+function onNodeClick(id) {
+  if (linkFrom) { finishLink(id); return; }
+  selectNode(id);
+}
+function editNode(id) {
+  const el = world.querySelector('.node[data-id="' + id + '"] .node-text');
+  if (!el) return;
+  el.setAttribute('contenteditable', 'true');
+  el.focus();
+  const r = document.createRange(); r.selectNodeContents(el);
+  const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+
+// ── canvas pan / zoom ────────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  if (linkFrom) { cancelLink(); }
+  selectNode(null);
+  const sx = e.clientX, sy = e.clientY, px = panX, py = panY;
+  canvas.classList.add('panning');
+  function mm(ev) { panX = px + (ev.clientX - sx); panY = py + (ev.clientY - sy); applyView(); }
+  function mu() { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); canvas.classList.remove('panning'); }
+  document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  zoomAt(e.deltaY < 0 ? 1.1 : 0.9, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+// touch: one finger pans the background, two fingers pinch-zoom
+function touchDist(t) { const dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY; return Math.hypot(dx, dy); }
+canvas.addEventListener('touchstart', e => {
+  if (e.target.closest('.node')) return;            // nodes handle their own touches
+  if (linkFrom) cancelLink();
+  if (e.touches.length === 1) {
+    selectNode(null);
+    const t = e.touches[0], sx = t.clientX, sy = t.clientY, px = panX, py = panY;
+    function tm(ev) { const tt = ev.touches[0]; panX = px + (tt.clientX - sx); panY = py + (tt.clientY - sy); applyView(); ev.preventDefault(); }
+    function te() { document.removeEventListener('touchmove', tm); document.removeEventListener('touchend', te); }
+    document.addEventListener('touchmove', tm, { passive: false }); document.addEventListener('touchend', te);
+  } else if (e.touches.length === 2) {
+    const r = canvas.getBoundingClientRect();
+    let d0 = touchDist(e.touches), z0 = zoom;
+    function tm(ev) {
+      if (ev.touches.length < 2) return;
+      const d = touchDist(ev.touches);
+      const mx = (ev.touches[0].clientX + ev.touches[1].clientX) / 2 - r.left;
+      const my = (ev.touches[0].clientY + ev.touches[1].clientY) / 2 - r.top;
+      const target = clamp(z0 * (d / d0), 0.2, 3);
+      const wx = (mx - panX) / zoom, wy = (my - panY) / zoom;
+      zoom = target; panX = mx - wx * zoom; panY = my - wy * zoom; applyView(); ev.preventDefault();
+    }
+    function te() { document.removeEventListener('touchmove', tm); document.removeEventListener('touchend', te); }
+    document.addEventListener('touchmove', tm, { passive: false }); document.addEventListener('touchend', te);
+  }
+}, { passive: false });
+
+// ── keyboard ─────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const ae = document.activeElement;
+  const editing = ae && (ae.getAttribute('contenteditable') === 'true' || ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT');
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveMind(); return; }
+  if (!editing && (e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (!editing && (e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
+  if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomBy(1.1); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoomBy(0.9); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); fitView(); return; }
+  if (editing) return;
+  if (e.key === 'Escape') { if (linkFrom) cancelLink(); return; }
+  if (!selectedId) return;
+  if (e.key === 'Tab') { e.preventDefault(); addChild(selectedId); }
+  else if (e.key === 'Enter') { e.preventDefault(); addSibling(selectedId); }
+  else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteNode(selectedId); }
+  else if (e.key === 'F2') { e.preventDefault(); editNode(selectedId); }
+  else if (e.key === ' ') { e.preventDefault(); toggleCollapse(selectedId); }
+});
+
+document.getElementById('map-title').addEventListener('input', e => { mapTitle = e.target.value || 'Untitled map'; saveLocal(); });
+
+// ── theme ────────────────────────────────────────────────────────────
+function applyTheme() {
+  const stored = storageGet(THEME_KEY);
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = stored === 'dark' || (stored === null && prefersDark);
+  document.body.classList.toggle('dark', isDark);
+  document.body.classList.toggle('light', !isDark);
+  const btn = document.getElementById('theme-btn');
+  if (btn) btn.textContent = isDark ? '☀' : '☾';
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = isDark ? '#1a1a17' : '#fafaf7';
+}
+function toggleTheme() {
+  const isDark = document.body.classList.contains('dark');
+  storageSet(THEME_KEY, isDark ? 'light' : 'dark');
+  applyTheme();
+}
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!storageGet(THEME_KEY)) applyTheme(); });
+
+// ════════════════════════════════════════════════════════════════════
+// OPTIONAL LOCAL AI (Ollama) - advisory only, the ONLY network call.
+// Expands a node into sub-ideas, or distills pasted text into a map. The AI
+// proposes; you approve. Every output is validated before it touches the map.
+// ════════════════════════════════════════════════════════════════════
+const EXPAND_PROMPT = `You are a systems architect. Break the user's single concept into 3 to 5 concrete sub-components or sub-topics.
+Return STRICT JSON only: { "children": ["sub 1", "sub 2", "sub 3"] }. Keep each label short (a few words). No markdown, no commentary.`;
+const DISTILL_PROMPT = `You are an expert at mapping ideas. Read the user's text and produce a concise nested mind map of its key concepts.
+Return STRICT JSON only in this shape:
+{ "root": "Central topic", "children": [ { "text": "Concept", "children": [ { "text": "Detail" } ] } ] }
+Keep labels short. Nest 2-3 levels deep at most. No markdown, no commentary.`;
+const SM_PROMPT = `You are a code-analysis assistant. From the user's code (Python/JS/pseudocode), extract the finite state machine.
+Return STRICT JSON only: { "states": ["IDLE","RUN"], "transitions": [ { "from":"IDLE", "to":"RUN", "label":"start" } ] }.
+Use only state names that appear in the code. No markdown, no commentary.`;
+
+const AI = {
+  host: 'http://localhost:11434', model: '', models: [], abort: null,
+  async detect() {
+    setAiStatus('Detecting Ollama…');
+    try {
+      const res = await fetch(this.host + '/api/tags'); if (!res.ok) throw new Error('HTTP ' + res.status);
+      this.models = ((await res.json()).models || []).map(m => m.name);
+      const sel = document.getElementById('ai-model');
+      if (!this.models.length) { sel.innerHTML = '<option value="">(no models - run: ollama pull llama3.2)</option>'; setAiStatus('Ollama is running but has no models.'); return; }
+      sel.innerHTML = this.models.map(m => '<option>' + escapeHtml(m) + '</option>').join('');
+      if (!this.model || !this.models.includes(this.model)) this.model = this.models[0];
+      sel.value = this.model;
+      setAiStatus('Connected · ' + this.models.length + ' model' + (this.models.length > 1 ? 's' : '') + '.');
+    } catch (e) { document.getElementById('ai-model').innerHTML = '<option value="">(Ollama not detected)</option>'; setAiStatus('Cannot reach Ollama. Install it, then: ollama serve.', true); }
+  },
+  async ensureModel() { if (this.model) return this.model; await this.detect(); return this.model; },
+  async _call(prompt, system, json) {
+    const model = await this.ensureModel(); if (!model) throw new Error('No Ollama model available.');
+    this.abort = new AbortController();
+    const t0 = Date.now(); const tick = setInterval(() => setAiStatus('Thinking… ' + ((Date.now() - t0) / 1000).toFixed(1) + 's'), 200);
+    try {
+      const body = { model, prompt, system, stream: false, options: { temperature: json ? 0 : 0.2 } };
+      if (json) body.format = 'json';
+      const res = await fetch(this.host + '/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: this.abort.signal });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const out = await res.json();
+      return json ? JSON.parse(out.response) : (out.response || '');
+    } finally { clearInterval(tick); this.abort = null; }
+  },
+  generateText(p, s) { return this._call(p, s, false); },
+  generateJSON(p, s) { return this._call(p, s, true); },
+  show() { document.getElementById('ai-panel').classList.remove('hidden'); this.detect(); },
+  hide() { document.getElementById('ai-panel').classList.add('hidden'); }
+};
+function setAiStatus(msg, err) { const s = document.getElementById('ai-status'); if (!s) return; s.textContent = msg || ''; s.classList.toggle('err', !!err); }
+
+// Feature A - Expand the selected node into validated sub-children
+async function aiExpand() {
+  if (!selectedId) { setAiStatus('Select a node first.', true); return; }
+  const node = byId(selectedId); if (!node) return;
+  const btn = document.getElementById('ai-expand-btn'), stop = document.getElementById('ai-stop');
+  btn.classList.add('hidden'); stop.classList.remove('hidden');
+  try {
+    const out = await AI.generateJSON('Concept: ' + node.text, EXPAND_PROMPT);
+    const kids = (out && Array.isArray(out.children) ? out.children : []).map(s => String(s).trim()).filter(Boolean).slice(0, 6);
+    if (kids.length < 2) { setAiStatus('No usable sub-nodes returned.', true); return; }
+    if (!confirm('Add these ' + kids.length + ' sub-nodes under "' + node.text + '"?\n\n• ' + kids.join('\n• '))) { setAiStatus('Cancelled.'); return; }
+    kids.forEach(t => createChild(node.id, t));
+    saveLocal(); render(); fitView();
+    setAiStatus('Added ' + kids.length + ' sub-nodes.');
+  } catch (e) { setAiStatus(e.name === 'AbortError' ? 'Cancelled.' : ('Error: ' + e.message), true); }
+  finally { btn.classList.remove('hidden'); stop.classList.add('hidden'); }
+}
+
+// Feature B - Distill pasted text into a nested map (preview → add)
+let pendingTree = null;
+function outlineText(rootText, items) {
+  let s = rootText + '\n';
+  (function walk(arr, d) { (arr || []).forEach(it => { if (!it || typeof it.text !== 'string') return; s += '  '.repeat(d) + '• ' + it.text.trim() + '\n'; if (Array.isArray(it.children)) walk(it.children, d + 1); }); })(items, 1);
+  return s.trim();
+}
+function countTree(items) { let c = 0; (function walk(arr) { (arr || []).forEach(it => { if (it && typeof it.text === 'string') { c++; if (Array.isArray(it.children)) walk(it.children); } }); })(items); return c; }
+function buildTree(parentId, items) {
+  (items || []).slice(0, 24).forEach(it => {
+    if (!it || typeof it.text !== 'string') return;
+    const node = createChild(parentId, it.text.trim() || 'Untitled');
+    if (node && Array.isArray(it.children)) buildTree(node.id, it.children);
+  });
+}
+async function aiDistillToMap() {
+  const src = document.getElementById('ai-distill-input').value.trim();
+  if (!src) { setAiStatus('Paste some text first.', true); return; }
+  const btn = document.getElementById('ai-distill-btn'), stop = document.getElementById('ai-stop');
+  btn.classList.add('hidden'); stop.classList.remove('hidden');
+  try {
+    const out = await AI.generateJSON('Text:\n\n' + src, DISTILL_PROMPT);
+    const rootText = (out && typeof out.root === 'string' && out.root.trim()) ? out.root.trim() : 'New topic';
+    const items = (out && Array.isArray(out.children)) ? out.children : [];
+    if (!countTree(items)) { setAiStatus('No concepts extracted.', true); return; }
+    pendingTree = { rootText, items };
+    const pv = document.getElementById('ai-distill-preview');
+    pv.textContent = outlineText(rootText, items); pv.classList.remove('hidden');
+    document.getElementById('ai-distill-apply').classList.remove('hidden');
+    setAiStatus('Drafted ' + (countTree(items) + 1) + ' nodes - review, then add.');
+  } catch (e) { setAiStatus(e.name === 'AbortError' ? 'Cancelled.' : ('Error: ' + e.message), true); }
+  finally { btn.classList.remove('hidden'); stop.classList.add('hidden'); }
+}
+function aiApplyDistill() {
+  if (!pendingTree) return;
+  pushUndo();
+  // drop the new tree's root to the right of existing content (deterministic - not auto-layout)
+  let maxX = -Infinity, minY = Infinity;
+  data.nodes.forEach(n => { maxX = Math.max(maxX, n.x); minY = Math.min(minY, n.y); });
+  if (!isFinite(maxX)) { maxX = 400; minY = 300; }
+  const root = { id: uid('n'), text: pendingTree.rootText, x: maxX + 340, y: minY, parent: null, collapsed: false };
+  data.nodes.push(root);
+  buildTree(root.id, pendingTree.items);
+  layoutTree(root.id, maxX + 340, minY);   // tidy the new subtree so branches don't overlap
+  selectedId = root.id;
+  pendingTree = null;
+  document.getElementById('ai-distill-preview').classList.add('hidden');
+  document.getElementById('ai-distill-apply').classList.add('hidden');
+  document.getElementById('ai-distill-input').value = '';
+  saveLocal(); render(); fitView();
+  setAiStatus('Added the map.');
+}
+
+// Feature C - plot a finite state machine from pasted code (states + transitions)
+let pendingSM = null;
+// Build state nodes (a row) + labeled signal-flow edges. A diagram, not a netlist.
+function buildStateMachine(spec) {
+  pushUndo();
+  let maxX = -Infinity, minY = Infinity;
+  data.nodes.forEach(n => { maxX = Math.max(maxX, n.x); minY = Math.min(minY, n.y); });
+  if (!isFinite(maxX)) { maxX = 300; minY = 300; }
+  const x0 = maxX + 320, y0 = minY, nameToId = {};
+  spec.states.forEach((s, i) => { const node = { id: uid('n'), text: s, x: x0 + (i % 6) * 200, y: y0 + Math.floor(i / 6) * 150, parent: null, collapsed: false }; data.nodes.push(node); nameToId[s] = node.id; });
+  let edges = 0;
+  spec.transitions.forEach(t => { if (nameToId[t.from] && nameToId[t.to]) { data.edges.push({ from: nameToId[t.from], to: nameToId[t.to], label: String(t.label || '').slice(0, 40), fromPort: 'r', toPort: 'l' }); edges++; } });
+  return { nodes: spec.states.length, edges, firstId: nameToId[spec.states[0]] };
+}
+async function aiStateMachine() {
+  const src = document.getElementById('ai-sm-input').value.trim();
+  if (!src) { setAiStatus('Paste some code first.', true); return; }
+  const btn = document.getElementById('ai-sm-btn'), stop = document.getElementById('ai-stop');
+  btn.classList.add('hidden'); stop.classList.remove('hidden');
+  try {
+    const out = await AI.generateJSON('Code:\n\n' + src, SM_PROMPT);
+    const states = [...new Set((out && Array.isArray(out.states) ? out.states : []).map(s => String(s).trim()).filter(Boolean))].slice(0, 40);
+    if (!states.length) { setAiStatus('No states found.', true); return; }
+    const set = new Set(states);
+    const transitions = (out && Array.isArray(out.transitions) ? out.transitions : []).filter(t => t && set.has(String(t.from)) && set.has(String(t.to))).map(t => ({ from: String(t.from), to: String(t.to), label: t.label }));
+    pendingSM = { states, transitions };
+    const pv = document.getElementById('ai-sm-preview');
+    pv.textContent = 'States: ' + states.join(', ') + '\n' + transitions.map(t => t.from + ' →' + (t.label ? ' [' + t.label + '] ' : ' ') + t.to).join('\n');
+    pv.classList.remove('hidden'); document.getElementById('ai-sm-apply').classList.remove('hidden');
+    setAiStatus('Drafted ' + states.length + ' states, ' + transitions.length + ' transitions - review, then add.');
+  } catch (e) { setAiStatus(e.name === 'AbortError' ? 'Cancelled.' : ('Error: ' + e.message), true); }
+  finally { btn.classList.remove('hidden'); stop.classList.add('hidden'); }
+}
+function aiApplyStateMachine() {
+  if (!pendingSM) return;
+  const r = buildStateMachine(pendingSM);
+  if (r.firstId) selectedId = r.firstId;
+  pendingSM = null;
+  document.getElementById('ai-sm-preview').classList.add('hidden');
+  document.getElementById('ai-sm-apply').classList.add('hidden');
+  document.getElementById('ai-sm-input').value = '';
+  saveLocal(); render(); fitView();
+  setAiStatus('Plotted the state machine.');
+}
+
+// wire the drawer (its DOM exists before this script runs)
+document.getElementById('ai-expand-btn').addEventListener('click', aiExpand);
+document.getElementById('ai-distill-btn').addEventListener('click', aiDistillToMap);
+document.getElementById('ai-distill-apply').addEventListener('click', aiApplyDistill);
+document.getElementById('ai-sm-btn').addEventListener('click', aiStateMachine);
+document.getElementById('ai-sm-apply').addEventListener('click', aiApplyStateMachine);
+document.getElementById('ai-stop').addEventListener('click', () => { if (AI.abort) AI.abort.abort(); });
+document.getElementById('ai-model').addEventListener('change', e => { AI.model = e.target.value; });
+window.AI = AI;
+
+// ── embed: opened inside the LocalOffice Hub (postMessage handoff) ────
+function applyOpenedMind(env, h) {
+  if (env.type !== 'mindmap') throw new Error('Not a mindmap file ("' + env.type + '")');
+  if (!env.body || !Array.isArray(env.body.nodes)) throw new Error('Invalid mindmap body');
+  importData(env); fileHandle = h || null; saveLocal(); render(); fitView();
+}
+window.addEventListener('message', async (e) => {
+  const m = e.data; if (!m || m.proto !== 'localoffice') return;
+  if (m.type === 'open-handle') { if (m.handle) fileHandle = m.handle; return; } // best-effort: enables in-place save when same-origin/hosted
+  if (m.type !== 'open') return;
+  try {
+    let t = m.text, h = m.handle || null;
+    if (h && t == null) t = await (await h.getFile()).text();
+    const env = LocalOffice.parse(t, { coerce: raw => (raw && Array.isArray(raw.nodes)) ? LocalOffice.createEnvelope('mindmap', { title: raw.title || '', app: APP, body: raw }) : null }).envelope;
+    applyOpenedMind(env, h);
+    (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: true }, '*');
+  } catch (err) { (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: false, error: String(err && err.message || err) }, '*'); }
+});
+// ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
+const JsonPanel = (function () {
+  'use strict';
+  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  function build() {
+    const s = document.createElement('style');
+    s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
+    document.head.appendChild(s);
+    host = document.createElement('div'); host.id = 'jp';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    document.body.appendChild(host);
+    ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
+    const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
+    on('x', hide);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
+    on('apply', apply);
+    host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
+    document.addEventListener('keydown', e => { if (host.classList.contains('on') && e.key === 'Escape') hide(); });
+  }
+  function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
+  function hide() { host.classList.remove('on'); }
+  function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
+  async function apply() {
+    try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
+    catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
+  }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function init(h) {
+    hooks = h; if (!host) build();
+    const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
+    const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
+    if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
+    else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
+    btn.addEventListener('click', open);
+  }
+  return { init, open };
+})();
+JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpenedMind(LocalOffice.parse(t, { coerce: raw => (raw && Array.isArray(raw.nodes)) ? LocalOffice.createEnvelope('mindmap', { title: raw.title || '', app: APP, body: raw }) : null }).envelope, fileHandle) });
+
+if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localMindMap' }, '*');
+
+// ── boot ─────────────────────────────────────────────────────────────
+applyTheme();
+snap = storageGet(SNAP_KEY) === '1';
+applySnapButton();
+loadLocal();
+applyView();
+render();
+fitView();
+</script>
+</body>
+</html>

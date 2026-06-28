@@ -1,0 +1,3387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#fafaf7">
+<meta name="description" content="A single-file personal planner. Your data stays on your device. No accounts, no cloud, no subscription.">
+<meta name="application-name" content="LocalPlan">
+<meta name="version" content="1.0.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="LocalPlan">
+
+<!-- Open Graph -->
+<meta property="og:title" content="LocalPlan - Your plan, your device">
+<meta property="og:description" content="A single-file personal planner. No accounts, no cloud, no subscription. Open the file. Plan your life.">
+<meta property="og:type" content="website">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="LocalPlan - Your plan, your device">
+<meta name="twitter:description" content="A single-file personal planner. No accounts, no cloud, no subscription.">
+
+<!-- Inline favicon (no external request) -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23f0e9d8'/%3E%3Ctext x='50' y='68' font-size='56' text-anchor='middle' fill='%235a4a2f' font-family='Georgia,serif' font-weight='500'%3EL%3C/text%3E%3C/svg%3E">
+
+<title>LocalPlan</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --surface: #ffffff;
+    --surface-2: #f4f3ee;
+    --ink: #1a1a17;
+    --ink-2: #5a5a55;
+    --ink-3: #8a8a83;
+    --border: rgba(0,0,0,0.08);
+    --border-strong: rgba(0,0,0,0.14);
+    --accent: #5a4a2f;
+    --accent-soft: #f0e9d8;
+    --gold: #b8862a;
+    --gold-soft: #f9efd6;
+    --success: #4a7c3f;
+    --success-soft: #e8f0e0;
+    --warning: #b8762a;
+    --danger: #a44040;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04);
+    --shadow-lg: 0 10px 40px rgba(0,0,0,0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ui { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Inter', system-ui, sans-serif; }
+  .container { max-width: 1180px; margin: 0 auto; padding: 32px 28px 80px; }
+
+  /* ======== WELCOME OVERLAY ======== */
+  .welcome-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 20, 18, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .welcome-overlay.show { opacity: 1; pointer-events: auto; }
+  .welcome-card {
+    background: var(--surface);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    max-width: 520px;
+    width: 100%;
+    padding: 36px 32px;
+    transform: translateY(20px);
+    transition: transform 0.3s;
+  }
+  .welcome-overlay.show .welcome-card { transform: translateY(0); }
+  .welcome-eyebrow {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 8px;
+  }
+  .welcome-title {
+    font-size: 28px;
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    margin-bottom: 12px;
+  }
+  .welcome-sub {
+    color: var(--ink-2);
+    font-size: 15px;
+    font-style: italic;
+    margin-bottom: 24px;
+    line-height: 1.5;
+  }
+  .welcome-reassure {
+    background: var(--success-soft);
+    border-left: 3px solid var(--success);
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 13px;
+    color: #2f5a2a;
+    margin-bottom: 24px;
+    line-height: 1.5;
+  }
+  .welcome-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .welcome-option {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    font-size: 15px;
+    color: var(--ink);
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+  .welcome-option:hover {
+    background: var(--surface-2);
+    border-color: var(--accent);
+    transform: translateX(2px);
+  }
+  .welcome-option-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-weight: 500;
+    flex-shrink: 0;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 15px;
+  }
+  .welcome-option-body { flex: 1; }
+  .welcome-option-title { font-weight: 500; margin-bottom: 2px; font-size: 15px; }
+  .welcome-option-desc {
+    font-size: 13px;
+    color: var(--ink-3);
+    font-family: -apple-system, system-ui, sans-serif;
+    line-height: 1.4;
+  }
+
+  /* ======== MAIN APP ======== */
+  header { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .eyebrow {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 6px;
+  }
+  h1 {
+    font-size: 32px;
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    margin-bottom: 6px;
+    cursor: pointer;
+    display: inline-block;
+    padding: 2px 6px;
+    margin-left: -6px;
+    border-radius: 4px;
+    transition: background 0.1s;
+  }
+  h1:hover { background: rgba(0,0,0,0.03); }
+  h1.editing { background: var(--surface); outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); cursor: text; }
+  .subtitle { color: var(--ink-2); font-size: 15px; font-style: italic; max-width: 700px; }
+
+  .storage-notice {
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    padding: 10px 14px;
+    margin: 16px 0 28px;
+    border-radius: var(--radius-sm);
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 12px;
+    color: var(--accent);
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .storage-notice button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: inherit;
+    letter-spacing: 0.3px;
+  }
+  .storage-notice button:hover { background: #4a3a20; }
+
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+  .toolbar button {
+    font-family: -apple-system, system-ui, sans-serif;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 7px 14px;
+    font-size: 12px;
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.2px;
+    min-height: 32px;
+  }
+  .toolbar button:hover { background: var(--surface-2); border-color: var(--ink-3); }
+  .toolbar button.primary { background: var(--ink); color: white; border-color: var(--ink); }
+  .toolbar button.primary:hover { background: #000; }
+  .toolbar button.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+  .horizon-nav {
+    display: flex;
+    gap: 2px;
+    background: var(--surface-2);
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 28px;
+    overflow-x: auto;
+    font-family: -apple-system, system-ui, sans-serif;
+    -webkit-overflow-scrolling: touch;
+  }
+  .horizon-nav button {
+    background: transparent;
+    border: none;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: var(--ink-2);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+    transition: all 0.15s;
+    min-height: 32px;
+  }
+  .horizon-nav button:hover { background: rgba(0,0,0,0.04); }
+  .horizon-nav button.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,0.06); font-weight: 500; }
+  .horizon-nav button.today { background: var(--gold-soft); color: var(--gold); font-weight: 500; }
+  .horizon-nav button.today.active { background: var(--gold); color: white; }
+
+  .track {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    overflow: hidden;
+    transition: box-shadow 0.2s, opacity 0.15s;
+  }
+  .track:hover { box-shadow: var(--shadow); }
+  .track.dragging { opacity: 0.5; }
+  .track.drag-over { box-shadow: 0 0 0 2px var(--accent); }
+
+  .track-header {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    cursor: pointer;
+    user-select: none;
+    gap: 14px;
+  }
+  .track-handle {
+    color: var(--ink-3);
+    cursor: grab;
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    user-select: none;
+  }
+  .track:hover .track-handle { opacity: 1; }
+  .track-handle:active { cursor: grabbing; }
+  .track-chevron {
+    width: 18px;
+    height: 18px;
+    color: var(--ink-3);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  .track.open .track-chevron { transform: rotate(90deg); }
+  .track-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .track-title { flex: 1; min-width: 0; }
+  .track-title h2 {
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: -0.2px;
+    cursor: text;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    border-radius: 4px;
+    display: inline-block;
+  }
+  .track-title h2:hover { background: rgba(0,0,0,0.03); }
+  .track-title h2.editing { background: var(--surface); outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+  .track-title .track-sub {
+    font-size: 12.5px;
+    color: var(--ink-3);
+    margin-top: 1px;
+    font-family: -apple-system, system-ui, sans-serif;
+    cursor: text;
+    padding: 1px 4px;
+    margin-left: -4px;
+    border-radius: 4px;
+    display: inline-block;
+  }
+  .track-title .track-sub:hover { background: rgba(0,0,0,0.03); }
+  .track-title .track-sub.editing { background: var(--surface); outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+  .track-progress {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px;
+    color: var(--ink-3);
+    background: var(--surface-2);
+    padding: 4px 10px;
+    border-radius: 12px;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+  }
+  .track-menu-btn {
+    background: none;
+    border: none;
+    color: var(--ink-3);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 18px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.1s;
+  }
+  .track:hover .track-menu-btn { opacity: 1; }
+  .track-menu-btn:hover { background: rgba(0,0,0,0.06); }
+
+  .track-body { display: none; }
+  .track.open .track-body { display: block; }
+  .track-content { padding: 0 20px 20px 64px; }
+
+  .section { margin-bottom: 18px; }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .section-label {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    cursor: text;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    border-radius: 4px;
+  }
+  .section-label:hover { background: rgba(0,0,0,0.03); }
+  .section-label.editing { background: var(--surface); outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); text-transform: none; letter-spacing: normal; font-size: 13px; color: var(--ink); }
+  .section-rule {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .section-handle {
+    color: var(--ink-3);
+    cursor: grab;
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s;
+    user-select: none;
+  }
+  .section:hover .section-handle { opacity: 0.7; }
+  .section.dragging { opacity: 0.5; }
+  .section.drag-over { background: var(--accent-soft); border-radius: var(--radius-sm); padding: 4px; }
+
+  .item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 6px;
+    border-radius: var(--radius-sm);
+    transition: background 0.1s, opacity 0.15s;
+    position: relative;
+  }
+  .item:hover { background: rgba(0,0,0,0.02); }
+  .item:hover .item-actions { opacity: 1; }
+  .item:hover .item-drag-handle { opacity: 0.7; }
+  .item.priority { background: var(--gold-soft); }
+  .item.priority:hover { background: #f5e6c8; }
+  .item.dragging { opacity: 0.4; }
+  .item.drag-over { box-shadow: inset 0 2px 0 var(--accent); }
+
+  .item-drag-handle {
+    color: var(--ink-3);
+    cursor: grab;
+    font-size: 14px;
+    line-height: 1;
+    margin-top: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    user-select: none;
+    width: 12px;
+    flex-shrink: 0;
+  }
+  .item-drag-handle:active { cursor: grabbing; }
+
+  .item-checkbox {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 4px;
+    margin-top: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    transition: all 0.15s;
+  }
+  .item-checkbox:hover { border-color: var(--accent); }
+  .item-checkbox:checked { background: var(--accent); border-color: var(--accent); }
+  .item-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 4px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+
+  .star-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    margin-top: 2px;
+    color: var(--ink-3);
+    font-size: 18px;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: color 0.15s, transform 0.1s;
+  }
+  .star-btn:hover { color: var(--gold); transform: scale(1.15); }
+  .star-btn.starred { color: var(--gold); }
+  .star-btn:active { transform: scale(0.9); }
+
+  .item-text { flex: 1; font-size: 14.5px; line-height: 1.55; min-width: 0; }
+  .item.done .item-text-main { color: var(--ink-3); text-decoration: line-through; }
+
+  .item-text-main {
+    cursor: text;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    border-radius: 4px;
+    transition: background 0.1s;
+    word-wrap: break-word;
+  }
+  .item-text-main:hover { background: rgba(0,0,0,0.03); }
+  .item-text-main.editing {
+    background: white;
+    outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+    cursor: text;
+  }
+
+  .item-detail {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--ink-2);
+    font-style: italic;
+    line-height: 1.5;
+    cursor: text;
+    padding: 2px 4px;
+    margin-left: -4px;
+    border-radius: 4px;
+    word-wrap: break-word;
+  }
+  .item-detail:hover { background: rgba(0,0,0,0.03); }
+  .item-detail.editing {
+    background: white;
+    outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+    font-style: normal;
+  }
+  .item-detail.hidden { display: none; }
+
+  .item-detail-toggle {
+    background: none;
+    border: none;
+    color: var(--ink-3);
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0;
+    margin-top: 3px;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+  }
+  .item-detail-toggle:hover { color: var(--accent); }
+
+  .item-actions {
+    opacity: 0;
+    transition: opacity 0.15s;
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .item-actions button {
+    background: none;
+    border: none;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px;
+    color: var(--ink-3);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    min-height: 28px;
+  }
+  .item-actions button:hover { background: rgba(0,0,0,0.06); color: var(--ink); }
+  .item-actions button.delete:hover { color: var(--danger); }
+
+  .add-item {
+    margin-top: 10px;
+    padding: 6px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .add-item input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 8px;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 14px;
+    color: var(--ink);
+    outline: none;
+    min-width: 0;
+  }
+  .add-item input::placeholder { color: var(--ink-3); }
+  .add-item button {
+    background: var(--ink);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    min-height: 30px;
+    flex-shrink: 0;
+  }
+  .add-item button:hover { background: #000; }
+
+  /* ======== RECURRING ======== */
+  .add-recur {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 0 6px;
+    color: var(--ink-3);
+    cursor: pointer;
+    height: 30px;
+    flex-shrink: 0;
+    transition: border-color 0.15s, color 0.15s;
+    max-width: 90px;
+  }
+  .add-recur.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .add-recur:focus { outline: none; border-color: var(--accent); }
+
+  .recur-badge {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 10px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 1px 7px;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    flex-shrink: 0;
+    align-self: center;
+    transition: border-color 0.15s;
+  }
+  .recur-badge:hover { border-color: var(--accent); }
+  .recur-badge:focus { outline: none; border-color: var(--accent); }
+
+  .add-section, .add-track {
+    margin-top: 14px;
+    padding: 10px 14px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--ink-3);
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    width: 100%;
+    text-align: center;
+    letter-spacing: 0.3px;
+    transition: all 0.15s;
+  }
+  .add-section:hover, .add-track:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin: 18px 0;
+  }
+  .stat {
+    background: var(--surface-2);
+    padding: 14px;
+    border-radius: var(--radius-sm);
+  }
+  .stat-label {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 4px;
+  }
+  .stat-value { font-size: 22px; font-weight: 500; letter-spacing: -0.5px; }
+  .stat-value.success { color: var(--success); }
+  .stat-value.gold { color: var(--gold); }
+
+  .footer-note {
+    text-align: center;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px;
+    color: var(--ink-3);
+    margin-top: 40px;
+    letter-spacing: 0.5px;
+    line-height: 1.6;
+  }
+  .footer-note a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--accent);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 30px;
+    color: var(--ink-3);
+    font-style: italic;
+    font-size: 13.5px;
+  }
+
+  .save-indicator {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--ink);
+    color: white;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px;
+    padding: 8px 14px;
+    border-radius: 16px;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    letter-spacing: 0.3px;
+    z-index: 100;
+    transform: translateY(10px);
+  }
+  .save-indicator.show { opacity: 1; transform: translateY(0); }
+
+  .menu-popup {
+    position: absolute;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg);
+    padding: 4px;
+    z-index: 50;
+    min-width: 160px;
+    font-family: -apple-system, system-ui, sans-serif;
+  }
+  .menu-popup button {
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 8px 12px;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .menu-popup button:hover { background: var(--surface-2); }
+  .menu-popup button.danger { color: var(--danger); }
+  .menu-popup button.danger:hover { background: #faebeb; }
+
+  /* ======== MOBILE ======== */
+  @media (max-width: 720px) {
+    .container { padding: 20px 16px 80px; }
+    h1 { font-size: 26px; }
+    .track-content { padding: 0 16px 16px 16px; }
+    .track-header { padding: 14px 14px; gap: 10px; }
+    .track-handle, .item-drag-handle, .section-handle { display: none; }
+    .item-actions { opacity: 1; }
+    .track-menu-btn { opacity: 1; }
+    .welcome-card { padding: 28px 22px; }
+    .welcome-title { font-size: 24px; }
+    .stat-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* ======== SEARCH ======== */
+  .search-wrap { position: relative; margin-bottom: 16px; }
+  .search-input {
+    width: 100%;
+    padding: 9px 36px 9px 34px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 13px;
+    background: var(--surface);
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--ink-3); }
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-3);
+    font-size: 14px;
+    pointer-events: none;
+  }
+  .search-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--ink-3);
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: 3px;
+    display: none;
+  }
+  .search-clear.show { display: block; }
+  .search-clear:hover { color: var(--ink); background: var(--surface-2); }
+  .search-hint {
+    font-size: 11px;
+    color: var(--ink-3);
+    margin-top: 5px;
+    font-family: -apple-system, system-ui, sans-serif;
+  }
+
+  /* ======== IMPORT MODAL ======== */
+  .import-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 20, 18, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .import-overlay.show { opacity: 1; pointer-events: auto; }
+  .import-card {
+    background: var(--surface);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    max-width: min(860px, 92vw);
+    width: 100%;
+    padding: 32px 30px;
+    transform: translateY(16px);
+    transition: transform 0.2s;
+  }
+  .import-overlay.show .import-card { transform: translateY(0); }
+  .import-title {
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+  .import-sub {
+    font-size: 13px;
+    color: var(--ink-2);
+    font-family: -apple-system, system-ui, sans-serif;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .import-format {
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .import-format summary { cursor: pointer; font-weight: 500; color: var(--ink-2); margin-bottom: 0; }
+  .import-format[open] summary { margin-bottom: 8px; }
+  .import-format pre {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--ink);
+    white-space: pre-wrap;
+  }
+  .import-textarea {
+    width: 100%;
+    height: min(46vh, 440px);
+    min-height: 200px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--surface-2);
+    resize: vertical;
+    outline: none;
+    line-height: 1.6;
+    transition: border-color 0.15s;
+    margin-bottom: 14px;
+  }
+  .import-textarea:focus { border-color: var(--accent); background: var(--surface); }
+  .import-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .import-btn-cancel {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--ink-2);
+    font-family: -apple-system, system-ui, sans-serif;
+    transition: all 0.15s;
+  }
+  .import-btn-cancel:hover { background: var(--surface-2); }
+  .import-btn-go {
+    background: var(--ink);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 8px 18px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: -apple-system, system-ui, sans-serif;
+    transition: background 0.15s;
+  }
+  .import-btn-go:hover { background: #000; }
+  .import-result {
+    margin-top: 10px;
+    font-size: 12px;
+    font-family: -apple-system, system-ui, sans-serif;
+    color: var(--danger);
+    min-height: 16px;
+  }
+  .import-result.ok { color: var(--success); }
+
+  /* ======== DARK MODE ======== */
+  @media (prefers-color-scheme: dark) {
+    body:not(.light) {
+      --bg: #1a1a17;
+      --surface: #242420;
+      --surface-2: #2e2e2a;
+      --ink: #f0ede6;
+      --ink-2: #a8a89f;
+      --ink-3: #68685f;
+      --border: rgba(255,255,255,0.08);
+      --border-strong: rgba(255,255,255,0.13);
+      --accent: #c4a265;
+      --accent-soft: #2a2418;
+      --gold: #c4922a;
+      --gold-soft: #26200e;
+      --success: #5a9c50;
+      --success-soft: #162414;
+      --danger: #c45050;
+    }
+  }
+  body.dark {
+    --bg: #1a1a17;
+    --surface: #242420;
+    --surface-2: #2e2e2a;
+    --ink: #f0ede6;
+    --ink-2: #a8a89f;
+    --ink-3: #68685f;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.13);
+    --accent: #c4a265;
+    --accent-soft: #2a2418;
+    --gold: #c4922a;
+    --gold-soft: #26200e;
+    --success: #5a9c50;
+    --success-soft: #162414;
+    --danger: #c45050;
+  }
+
+  /* ======== BRAINDUMP FIRST-RUN OVERLAY ======== */
+  .braindump-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    padding: 24px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+  .braindump-overlay.show { opacity: 1; pointer-events: auto; }
+  .braindump-theme {
+    position: absolute; top: 16px; right: 18px;
+    background: transparent; border: 1px solid var(--border-strong); color: var(--ink);
+    border-radius: 8px; padding: 6px 11px; cursor: pointer; font-size: 14px;
+  }
+  .braindump-theme:hover { border-color: var(--ink-3); }
+  .braindump-card { max-width: min(860px, 92vw); width: 100%; }
+  .braindump-prompt {
+    font-size: 30px;
+    font-weight: 500;
+    letter-spacing: -0.5px;
+    margin-bottom: 22px;
+    color: var(--ink);
+  }
+  .braindump-ta {
+    width: 100%;
+    height: min(52vh, 480px);
+    min-height: 220px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--ink);
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.85;
+    padding: 16px 18px;
+    outline: none;
+    caret-color: var(--accent);
+    transition: border-color 0.15s;
+    margin-bottom: 12px;
+    resize: vertical;
+  }
+  .braindump-ta::placeholder { color: var(--ink-3); }
+  .braindump-ta:focus { border-color: var(--accent); }
+  .braindump-hint {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-bottom: 22px;
+    line-height: 1.5;
+  }
+  .braindump-actions { display: flex; align-items: center; gap: 18px; }
+  .braindump-go {
+    background: var(--ink);
+    color: var(--bg);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: -apple-system, system-ui, sans-serif;
+    transition: opacity 0.15s;
+  }
+  .braindump-go:hover { opacity: 0.85; }
+  .braindump-skip {
+    background: none;
+    border: none;
+    color: var(--ink-3);
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+    transition: color 0.15s;
+  }
+  .braindump-skip:hover { color: var(--ink-2); }
+  .braindump-error {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 12px;
+    color: var(--danger);
+    margin-top: 10px;
+    min-height: 16px;
+  }
+
+  /* ======== REVIEW MODE ======== */
+  .review-section { margin-bottom: 36px; }
+  .review-heading {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--ink-3);
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .review-group-title {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin: 14px 0 6px;
+  }
+  .review-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 14px;
+    color: var(--ink);
+    border-bottom: 1px solid var(--border);
+  }
+  .review-item:last-child { border-bottom: none; }
+  .review-item.done-item { color: var(--ink-3); text-decoration: line-through; }
+  .review-item.priority-item { color: var(--accent); }
+  .review-track-label {
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--ink-3);
+    flex-shrink: 0;
+  }
+  .review-empty {
+    font-style: italic;
+    color: var(--ink-3);
+    font-size: 13.5px;
+    padding: 8px 0;
+  }
+  .toolbar button.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  /* zoom control group */
+  .zoomgrp { display: inline-flex; align-items: center; gap: 4px; }
+  .zoomgrp #zoom-label { font-size: 12px; color: var(--ink-3); min-width: 40px; text-align: center; }
+  /* zoom the whole reading column so it scales width + height (fills the screen),
+     not just the list height. Overlays sit outside .container, so they don't zoom. */
+  .container { zoom: var(--plan-zoom, 1); }
+
+  /* ── print / PDF: clean one-document layout ── */
+  @media print {
+    @page { margin: 14mm; }
+    body { background: #fff !important; color: #000 !important; }
+    .toolbar, .search-wrap, .horizon-nav, .storage-notice, .save-indicator,
+    .track-menu-btn, .star-btn, .add-item-btn, .braindump-overlay, .import-overlay,
+    #search-clear, .eyebrow { display: none !important; }
+    .container { zoom: 1 !important; }
+    .track { break-inside: avoid; box-shadow: none !important; border: 1px solid #ccc; }
+    .item { break-inside: avoid; }
+    a[href]:after { content: ''; }
+    #ai-panel { display: none !important; }
+  }
+
+  /* ── optional local-AI drawer (advisory only, local Ollama) ── */
+  #ai-panel { position: fixed; top: 0; right: 0; width: 380px; max-width: 94vw; height: 100%;
+              background: var(--surface); border-left: 1px solid var(--border); z-index: 2500;
+              display: flex; flex-direction: column; box-shadow: var(--shadow-lg); }
+  #ai-panel.hidden { display: none; }
+  #ai-panel .hidden { display: none; }
+  .ai-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .ai-head strong { flex: 0 0 auto; } .ai-head .status { flex: 1; min-width: 0; color: var(--ink-3); font-size: 12px; }
+  .ai-body { padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
+  .ai-body > label { font-size: 12px; color: var(--ink-2); }
+  .ai-body select, .ai-body textarea { width: 100%; background: var(--surface-2); border: 1px solid var(--border-strong);
+              color: var(--ink); border-radius: var(--radius-sm); padding: 8px 10px; font: inherit; }
+  .ai-body textarea { min-height: 120px; resize: vertical; font-family: 'Courier New', monospace; font-size: 12px; }
+  .ai-fence { background: var(--accent-soft); border: 1px solid var(--accent); color: var(--ink);
+              border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px; line-height: 1.5; }
+  .ai-section h3 { font-size: 13px; margin: 0 0 6px; }
+  .ai-body button { font: inherit; padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
+              background: var(--surface); color: var(--ink); cursor: pointer; }
+  .ai-body button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .ai-body button:hover { border-color: var(--ink-3); }
+  #ai-status.err { color: var(--danger); }
+  .ai-result { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+  .ai-result ul { margin: 6px 0; padding-left: 18px; }
+  .ai-break { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- LOCAL AI DRAWER (optional, advisory, local Ollama only) -->
+<div id="ai-panel" class="hidden">
+  <div class="ai-head">
+    <strong>✦ Local AI</strong>
+    <span class="status" id="ai-status">…</span>
+    <button onclick="AI.hide()" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--ink-2)">✕</button>
+  </div>
+  <div class="ai-body">
+    <div class="ai-fence"><b>The AI proposes; you decide.</b> It distills messy notes into tasks, breaks a big task into steps, and suggests priorities - but never changes your plan without your approval. Talks only to your local Ollama at <code>localhost:11434</code>.</div>
+    <label>Model <select id="ai-model"><option value="">(detecting…)</option></select></label>
+
+    <div class="ai-section">
+      <h3>Distill to plan</h3>
+      <textarea id="ai-distill-input" placeholder="Paste meeting notes, an email, or raw thoughts…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="primary" id="ai-distill-btn">Extract tasks</button>
+        <button id="ai-stop" class="hidden">Stop</button>
+      </div>
+      <div id="ai-distill-preview" class="hidden" style="margin-top:10px">
+        <h3>Proposed additions <span class="status" style="font-weight:400">- review &amp; edit</span></h3>
+        <textarea id="ai-distill-ta"></textarea>
+        <button class="primary" id="ai-distill-apply" style="margin-top:8px">Add to plan</button>
+      </div>
+    </div>
+
+    <div class="ai-section">
+      <h3>Suggest priorities</h3>
+      <p class="status" style="margin:0 0 6px">Picks the few highest-leverage tasks from your active Now/Soon items.</p>
+      <button id="ai-prio-btn">Suggest</button>
+      <div id="ai-prio-result" class="ai-result hidden" style="margin-top:8px"></div>
+      <button class="primary hidden" id="ai-prio-apply" style="margin-top:8px">Star these</button>
+    </div>
+  </div>
+</div>
+
+<!-- BRAINDUMP FIRST-RUN OVERLAY -->
+<div class="braindump-overlay" id="braindump-overlay">
+  <button class="braindump-theme" id="braindump-theme-btn" onclick="toggleTheme()" title="Toggle light/dark mode">☾</button>
+  <div class="braindump-card">
+    <div class="braindump-prompt">What's in your head right now?</div>
+    <textarea class="braindump-ta" id="braindump-ta"
+      placeholder="dentist appointment&#10;prep for Thursday meeting&#10;call mom&#10;pay electricity bill&#10;work: launch prep [Soon]&#10;home: grocery run (priority)"></textarea>
+    <div class="braindump-hint">Plain lines go to Inbox. Use <em style="color:var(--ink-2)">track: item</em> to sort as you type. ⌘↵ to organize.</div>
+    <div class="braindump-actions">
+      <button class="braindump-go" onclick="runBraindump()">Organize →</button>
+      <button class="braindump-skip" onclick="skipBraindump()">Skip - choose a starter pack</button>
+    </div>
+    <div class="braindump-error" id="braindump-error"></div>
+  </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div class="import-overlay" id="import-overlay">
+  <div class="import-card">
+    <div class="import-title">Paste a list</div>
+    <p class="import-sub ui">One item per line. Items are added to your existing plan - nothing is replaced.</p>
+    <details class="import-format">
+      <summary>Format guide</summary>
+      <pre>home: plan meals (priority)
+home: grocery run -- check pantry first
+home: deep clean kitchen [Soon]
+work: prep for quarterly review [Soon]
+work > Later: skills to develop
+wellness: daily journaling (priority)</pre>
+    </details>
+    <textarea class="import-textarea" id="import-textarea" placeholder="Paste your list here...&#10;&#10;track: item text&#10;track: item text (priority)&#10;track: item text [Soon]"></textarea>
+    <div class="import-actions">
+      <button class="import-btn-cancel" onclick="hideImportModal()">Cancel</button>
+      <button class="import-btn-go" onclick="runImport()">Import items</button>
+    </div>
+    <div class="import-result" id="import-result"></div>
+  </div>
+</div>
+
+<!-- WELCOME OVERLAY -->
+<div class="welcome-overlay" id="welcome-overlay">
+  <div class="welcome-card">
+    <div class="welcome-eyebrow ui">Choose your structure</div>
+    <h2 class="welcome-title">Pick a starting point</h2>
+    <p class="welcome-sub">Each pack has tracks built for your life. Rename or add anything later.</p>
+    <div class="welcome-reassure ui">
+      <strong>Your data stays on this device.</strong> Nothing is sent anywhere. No account needed.
+    </div>
+    <div class="welcome-options">
+      <button class="welcome-option" data-pack="engineer">
+        <div class="welcome-option-icon">E</div>
+        <div class="welcome-option-body">
+          <div class="welcome-option-title">Engineer</div>
+          <div class="welcome-option-desc ui">Career, Deep Work, Learning, Health, Life.</div>
+        </div>
+      </button>
+      <button class="welcome-option" data-pack="founder">
+        <div class="welcome-option-icon">F</div>
+        <div class="welcome-option-body">
+          <div class="welcome-option-title">Founder</div>
+          <div class="welcome-option-desc ui">Product, Users, Capital, Ops, Life.</div>
+        </div>
+      </button>
+      <button class="welcome-option" data-pack="parent">
+        <div class="welcome-option-icon">P</div>
+        <div class="welcome-option-body">
+          <div class="welcome-option-title">Parent</div>
+          <div class="welcome-option-desc ui">Kids, School, Home, Health, Life.</div>
+        </div>
+      </button>
+      <button class="welcome-option" data-pack="balanced">
+        <div class="welcome-option-icon">B</div>
+        <div class="welcome-option-body">
+          <div class="welcome-option-title">Balanced Life</div>
+          <div class="welcome-option-desc ui">Focus, Health, Family, Creative, Legacy.</div>
+        </div>
+      </button>
+      <button class="welcome-option" data-pack="blank">
+        <div class="welcome-option-icon">+</div>
+        <div class="welcome-option-body">
+          <div class="welcome-option-title">Blank</div>
+          <div class="welcome-option-desc ui">Start with nothing. Build your own structure.</div>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="container" id="app">
+
+  <header>
+    <div class="eyebrow ui">My Plan</div>
+    <h1 id="plan-title" title="Click to rename">My Plan</h1>
+    <p class="subtitle" id="plan-subtitle" title="Click to edit">What matters. What comes next.</p>
+  </header>
+
+  <div class="storage-notice ui" id="storage-notice">
+    <span>Your data is saved on this device only. Save to a file occasionally so you don't lose it.</span>
+    <button onclick="savePlanAs()">Save to file</button>
+    <button onclick="dismissNotice()" style="background:transparent;color:var(--accent);padding:4px 8px;">Hide</button>
+  </div>
+
+  <div class="toolbar ui">
+    <button onclick="openPlan()">Open</button>
+    <button class="primary" onclick="savePlan()" title="Save (Ctrl+S)">Save</button>
+    <button onclick="savePlanAs()">Save As</button>
+    <button id="undo-btn" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↶</button>
+    <button id="redo-btn" onclick="redo()" title="Redo (Ctrl+Y)" disabled>↷</button>
+    <button onclick="printPlan()" title="Print or save as PDF">Print / PDF</button>
+    <button onclick="AI.show()" title="Local AI - optional, needs Ollama. Proposes; you decide.">✦ AI</button>
+    <button class="primary" onclick="showImportModal()">Paste a list</button>
+    <button onclick="expandAll()">Open all</button>
+    <button onclick="collapseAll()">Close all</button>
+    <button id="review-btn" onclick="toggleReview()">Review</button>
+    <span class="zoomgrp">
+      <button onclick="setPlanZoom(planZoom - 0.1)" title="Zoom out (Ctrl -)">−</button>
+      <span id="zoom-label">100%</span>
+      <button onclick="setPlanZoom(planZoom + 0.1)" title="Zoom in (Ctrl +)">+</button>
+    </span>
+    <button id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark mode">☾</button>
+    <button class="danger" onclick="resetToWelcome()">Start over</button>
+  </div>
+
+  <div class="search-wrap ui">
+    <span class="search-icon">⌕</span>
+    <input type="text" class="search-input" id="search-input" placeholder="Search across all tracks… (press / to focus)" autocomplete="off" spellcheck="false">
+    <button class="search-clear" id="search-clear" title="Clear search">✕</button>
+  </div>
+
+  <div class="horizon-nav ui" id="horizon-nav">
+    <button class="today" data-horizon="priority">★ Today</button>
+    <button class="active" data-horizon="all">Everything</button>
+    <button data-horizon="now">Now</button>
+    <button data-horizon="soon">Soon</button>
+    <button data-horizon="later">Later</button>
+    <button data-horizon="someday">Someday</button>
+  </div>
+
+  <div id="tracks-container"></div>
+
+  <button class="add-track ui" onclick="addTrack()">+ Add a new track</button>
+
+  <div class="footer-note ui">
+    <p id="save-note">Autosaves on this device · Last saved <span id="last-saved">-</span> · use <b>Save</b> to write the file</p>
+    <p style="margin-top:8px;">Open source · MIT</p>
+  </div>
+
+</div>
+
+<div class="save-indicator ui" id="save-indicator">Saved</div>
+
+<script>
+// ============================================================
+// SHARED CORE - vendored from ../src/core.js (keep in sync). Exposes LocalOffice.
+// IIFE-scoped (strict inside) so it doesn't change this file's existing script.
+// ============================================================
+const LocalOffice = (function () {
+  'use strict';
+  const FORMAT = 'localoffice/v1', FORMAT_PREFIX = 'localoffice/', FILE_EXT = '.localoffice.json';
+  const TYPES = ['sheet', 'plan', 'flashcards', 'mindmap', 'slides'];
+  function nowISO() { return new Date().toISOString(); }
+  function uuid() {
+    const c = (typeof crypto !== 'undefined') ? crypto : null;
+    if (c && typeof c.randomUUID === 'function') { try { return c.randomUUID(); } catch (_) {} }
+    let rnd;
+    if (c && typeof c.getRandomValues === 'function') { const b = new Uint8Array(16); c.getRandomValues(b); b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80; rnd = (i) => b[i]; }
+    else { const a = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256)); a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80; rnd = (i) => a[i]; }
+    const h = []; for (let i = 0; i < 16; i++) h.push((rnd(i) + 0x100).toString(16).slice(1));
+    return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+  }
+  function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function freshBody(type) {
+    switch (type) { case 'sheet': return { sheets: [] }; case 'plan': return { tracks: [] }; case 'flashcards': return { deck: { name: '' }, scheduler: 'fsrs-lite', cards: [] }; case 'mindmap': return { nodes: [], edges: [] }; case 'slides': return { theme: {}, slides: [] }; default: return {}; }
+  }
+  function createEnvelope(type, opts = {}) {
+    if (!TYPES.includes(type)) throw new Error(`createEnvelope: unknown type "${type}"`);
+    const ts = nowISO();
+    return { format: FORMAT, type, meta: { id: opts.id || uuid(), title: opts.title || '', created: ts, modified: ts, app: opts.app || '', tags: Array.isArray(opts.tags) ? opts.tags.slice() : [] }, body: isPlainObject(opts.body) ? opts.body : freshBody(type) };
+  }
+  function validate(obj) {
+    const errors = [], warnings = [];
+    if (!isPlainObject(obj)) return { ok: false, errors: ['Not a JSON object.'], warnings, type: null, formatVersion: null };
+    let formatVersion = null;
+    if (typeof obj.format !== 'string') errors.push('Missing "format" field.');
+    else if (!obj.format.startsWith(FORMAT_PREFIX)) errors.push(`Unrecognized format "${obj.format}".`);
+    else { formatVersion = obj.format.slice(FORMAT_PREFIX.length); if (obj.format !== FORMAT) warnings.push(`Format "${obj.format}" differs.`); }
+    if (typeof obj.type !== 'string' || !obj.type) errors.push('Missing "type" field.');
+    else if (!TYPES.includes(obj.type)) warnings.push(`Unknown type "${obj.type}".`);
+    if (!isPlainObject(obj.meta)) errors.push('Missing or invalid "meta".');
+    if (!isPlainObject(obj.body)) warnings.push('Missing or invalid "body".');
+    return { ok: errors.length === 0, errors, warnings, type: typeof obj.type === 'string' ? obj.type : null, formatVersion };
+  }
+  function normalize(obj) {
+    if (!isPlainObject(obj.meta)) obj.meta = {};
+    const m = obj.meta;
+    if (typeof m.id !== 'string' || !m.id) m.id = uuid();
+    if (typeof m.title !== 'string') m.title = '';
+    if (typeof m.created !== 'string') m.created = nowISO();
+    if (typeof m.modified !== 'string') m.modified = m.created;
+    if (typeof m.app !== 'string') m.app = '';
+    if (!Array.isArray(m.tags)) m.tags = [];
+    if (!isPlainObject(obj.body)) obj.body = freshBody(obj.type);
+    return obj;
+  }
+  class LoadError extends Error { constructor(m, d) { super(m); this.name = 'LoadError'; this.detail = d; } }
+  function parse(text, opts = {}) {
+    let raw; try { raw = JSON.parse(text); } catch (e) { throw new LoadError('File is not valid JSON.', e.message); }
+    let r = validate(raw), obj = raw;
+    if (!r.ok && typeof opts.coerce === 'function') { const c = opts.coerce(raw); if (isPlainObject(c)) { obj = c; r = validate(obj); } }
+    if (!r.ok) throw new LoadError('Not a LocalOffice file: ' + r.errors.join(' '), r.errors);
+    normalize(obj); return { envelope: obj, warnings: r.warnings };
+  }
+  function stringify(env, pretty = true) { return JSON.stringify(env, null, pretty ? 2 : 0); }
+  function serialize(env, opts = {}) {
+    if (!isPlainObject(env)) throw new Error('serialize: not an object');
+    const r = validate(env); if (!r.ok) throw new Error('serialize: invalid - ' + r.errors.join(' '));
+    if (opts.touch !== false) { if (!isPlainObject(env.meta)) env.meta = {}; env.meta.modified = nowISO(); }
+    return stringify(env, opts.pretty !== false);
+  }
+  function slugify(s) { return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); }
+  function suggestedName(env) { return (slugify(env && env.meta && env.meta.title) || (env && env.type) || 'untitled') + FILE_EXT; }
+  function supportsFS() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; }
+  const PICKER_TYPES = [{ description: 'LocalOffice file', accept: { 'application/json': ['.json'] } }];
+  function pickFileFallback() { return new Promise((res, rej) => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json'; i.style.display = 'none'; i.addEventListener('change', () => { const f = i.files && i.files[0]; i.remove(); f ? res(f) : rej(new Error('No file selected.')); }); document.body.appendChild(i); i.click(); }); }
+  function isEmbedded() { return typeof window !== 'undefined' && window.parent && window.parent !== window; }
+  // Embedded in the Hub: file pickers are blocked in a cross-origin subframe, so
+  // delegate the write to the Hub (top frame), which holds the directory handle
+  // and saves in place - even over file://.
+  function hubSave(text, name, asNew) {
+    return new Promise((resolve, reject) => {
+      const id = 'lo' + Math.random().toString(36).slice(2);
+      function on(e) { const m = e.data; if (!m || m.proto !== 'localoffice' || m.type !== 'saved' || m.id !== id) return; window.removeEventListener('message', on); if (m.ok) resolve({ handle: null, name: m.name || name }); else if (m.error === 'cancelled') { const a = new Error('cancelled'); a.name = 'AbortError'; reject(a); } else reject(new Error(m.error || 'Save failed')); }
+      window.addEventListener('message', on);
+      window.parent.postMessage({ proto: 'localoffice', type: 'save', id, text, name, asNew: !!asNew }, '*');
+    });
+  }
+  async function openFile(opts = {}) {
+    if (supportsFS()) {
+      try { const [h] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false }); const f = await h.getFile(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: h, name: f.name, warnings }; }
+      catch (e) { if (e && e.name === 'AbortError') throw e; /* picker blocked (cross-origin iframe) → upload fallback */ }
+    }
+    const f = await pickFileFallback(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: null, name: f.name, warnings };
+  }
+  async function saveFile(env, handle, opts = {}) {
+    const text = serialize(env, opts);
+    if (isEmbedded()) return hubSave(text, suggestedName(env), false);
+    if (handle && typeof handle.createWritable === 'function') { const w = await handle.createWritable(); await w.write(text); await w.close(); return { handle, name: handle.name }; }
+    return saveFileAs(env, suggestedName(env), { ...opts, _text: text });
+  }
+  async function saveFileAs(env, suggested, opts = {}) {
+    const text = opts._text != null ? opts._text : serialize(env, opts); const name = suggested || suggestedName(env);
+    if (isEmbedded()) return hubSave(text, name, true);
+    if (supportsFS()) { const h = await window.showSaveFilePicker({ suggestedName: name, types: PICKER_TYPES }); const w = await h.createWritable(); await w.write(text); await w.close(); return { handle: h, name: h.name }; }
+    download(text, name); return { handle: null, name };
+  }
+  function download(text, filename) { const b = new Blob([text], { type: 'application/json' }), u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || ('untitled' + FILE_EXT); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 0); }
+  return { FORMAT, FILE_EXT, TYPES, uuid, nowISO, createEnvelope, validate, normalize, parse, stringify, serialize, slugify, suggestedName, LoadError, supportsFS, openFile, saveFile, saveFileAs, download };
+})();
+
+// ============================================================
+// STARTER PACKS
+// ============================================================
+const STARTER_PACKS = {
+  engineer: {
+    planTitle: 'My Plan',
+    planSubtitle: 'What matters. What comes next.',
+    tracks: [
+      {
+        id: 'eng_career', icon: 'C', title: 'Career',
+        subtitle: 'Work priorities, output, growth.',
+        open: true,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'ec1', text: 'This week\'s top priorities at work', priority: true },
+            { id: 'ec2', text: 'Review open PRs or tickets' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'ec3', text: 'Prep for next performance review' },
+            { id: 'ec4', text: 'Architecture doc to write' }
+          ]},
+          { name: 'Later', horizon: 'later', items: [
+            { id: 'ec5', text: 'Certifications or skills to pursue' }
+          ]}
+        ]
+      },
+      {
+        id: 'eng_dw', icon: 'D', title: 'Deep Work',
+        subtitle: 'Focused time, meaningful output.',
+        open: true,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'ed1', text: 'Current project - next milestone', priority: true },
+            { id: 'ed2', text: 'Distraction to eliminate this week' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'ed3', text: 'Refactoring task to tackle' }
+          ]}
+        ]
+      },
+      {
+        id: 'eng_learn', icon: 'L', title: 'Learning',
+        subtitle: 'Papers, courses, frameworks, knowledge.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'el1', text: 'Read 30 min daily', priority: true },
+            { id: 'el2', text: 'Article or paper to finish' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'el3', text: 'Framework or tool to properly learn' }
+          ]},
+          { name: 'Someday', horizon: 'someday', items: [
+            { id: 'el4', text: 'Domain to explore eventually' }
+          ]}
+        ]
+      },
+      {
+        id: 'eng_health', icon: 'H', title: 'Health',
+        subtitle: 'Movement, sleep, recovery.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'eh1', text: 'Daily walk or movement', priority: true },
+            { id: 'eh2', text: 'Sleep by 11pm' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'eh3', text: 'Book annual physical' }
+          ]}
+        ]
+      },
+      {
+        id: 'eng_life', icon: 'M', title: 'Life',
+        subtitle: 'Everything outside the screen.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'em1', text: 'Reach out to someone', priority: true },
+            { id: 'em2', text: 'Bills and finances this month' }
+          ]},
+          { name: 'Later', horizon: 'later', items: [
+            { id: 'em3', text: 'Trip to plan' }
+          ]}
+        ]
+      }
+    ]
+  },
+  founder: {
+    planTitle: 'My Plan',
+    planSubtitle: 'What matters. What comes next.',
+    tracks: [
+      {
+        id: 'fnd_product', icon: 'P', title: 'Product',
+        subtitle: 'Features, bugs, roadmap, user feedback.',
+        open: true,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'fp1', text: 'Top 3 things to ship this sprint', priority: true },
+            { id: 'fp2', text: 'Bug backlog triage' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'fp3', text: 'User feedback synthesis' },
+            { id: 'fp4', text: 'Roadmap review' }
+          ]},
+          { name: 'Later', horizon: 'later', items: [
+            { id: 'fp5', text: 'V2 feature ideas' }
+          ]}
+        ]
+      },
+      {
+        id: 'fnd_users', icon: 'U', title: 'Users',
+        subtitle: 'Customers, activation, interviews, retention.',
+        open: true,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'fu1', text: 'Follow up with 2 active users', priority: true },
+            { id: 'fu2', text: 'Activation funnel - where are people dropping?' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'fu3', text: '5 customer interviews to schedule' }
+          ]},
+          { name: 'Someday', horizon: 'someday', items: [
+            { id: 'fu4', text: 'Community or user group to build' }
+          ]}
+        ]
+      },
+      {
+        id: 'fnd_capital', icon: '$', title: 'Capital',
+        subtitle: 'Runway, fundraise, investor relations.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'fc1', text: 'Runway model - current burn rate', priority: true },
+            { id: 'fc2', text: 'Investor update to send' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'fc3', text: 'Next fundraise timeline' }
+          ]}
+        ]
+      },
+      {
+        id: 'fnd_ops', icon: 'O', title: 'Ops',
+        subtitle: 'Hiring, legal, tools, admin.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'fo1', text: 'Tool subscriptions audit' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'fo2', text: 'Legal docs to review' },
+            { id: 'fo3', text: 'Next hire - role to define' }
+          ]}
+        ]
+      },
+      {
+        id: 'fnd_life', icon: 'L', title: 'Life',
+        subtitle: 'Rest, relationships, everything else.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'fl1', text: 'Weekly rest day - protect it', priority: true },
+            { id: 'fl2', text: 'Call family or close friend' }
+          ]},
+          { name: 'Later', horizon: 'later', items: [
+            { id: 'fl3', text: 'Annual vacation to plan' }
+          ]}
+        ]
+      }
+    ]
+  },
+  parent: {
+    planTitle: 'My Plan',
+    planSubtitle: 'What matters. What comes next.',
+    tracks: [
+      {
+        id: 'par_kids', icon: 'K', title: 'Kids',
+        subtitle: 'Appointments, milestones, activities.',
+        open: true,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'pk1', text: 'This week\'s activity schedule', priority: true },
+            { id: 'pk2', text: 'Doctor appointments to book' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'pk3', text: 'Plan a special outing' }
+          ]},
+          { name: 'Someday', horizon: 'someday', items: [
+            { id: 'pk4', text: 'Experiences to give them someday' }
+          ]}
+        ]
+      },
+      {
+        id: 'par_school', icon: 'S', title: 'School',
+        subtitle: 'Forms, events, homework, teachers.',
+        open: true,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'ps1', text: 'Permission slips or forms due' },
+            { id: 'ps2', text: 'Homework support this week' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'ps3', text: 'Parent-teacher conference' }
+          ]},
+          { name: 'Later', horizon: 'later', items: [
+            { id: 'ps4', text: 'Extracurriculars to explore' }
+          ]}
+        ]
+      },
+      {
+        id: 'par_home', icon: 'H', title: 'Home',
+        subtitle: 'Groceries, meals, maintenance, admin.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'ph1', text: 'Weekly grocery run', priority: true },
+            { id: 'ph2', text: 'Meal plan this week' },
+            { id: 'ph3', text: 'Bills due' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'ph4', text: 'Deep clean a room' }
+          ]},
+          { name: 'Later', horizon: 'later', items: [
+            { id: 'ph5', text: 'Bigger home project' }
+          ]}
+        ]
+      },
+      {
+        id: 'par_health', icon: 'W', title: 'Health',
+        subtitle: 'Family wellness, appointments, movement.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'pw1', text: 'Family walk or active time', priority: true }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'pw2', text: 'Annual physicals to book' },
+            { id: 'pw3', text: 'Dentist appointments' }
+          ]}
+        ]
+      },
+      {
+        id: 'par_life', icon: 'M', title: 'Life',
+        subtitle: 'Relationships, your own time, big picture.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'pl1', text: 'Quality time with partner', priority: true },
+            { id: 'pl2', text: 'Call a friend' }
+          ]},
+          { name: 'Later', horizon: 'later', items: [
+            { id: 'pl3', text: 'Family trip to plan' }
+          ]}
+        ]
+      }
+    ]
+  },
+  balanced: {
+    planTitle: 'My Plan',
+    planSubtitle: 'What matters. What comes next.',
+    tracks: [
+      {
+        id: 'bal_focus', icon: 'F', title: 'Focus',
+        subtitle: 'Most important things. Don\'t let them drift.',
+        open: true,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'bf1', text: 'Most important thing this week', priority: true },
+            { id: 'bf2', text: 'Clear the inbox' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'bf3', text: 'Are you focused on the right things?' }
+          ]},
+          { name: 'Someday', horizon: 'someday', items: [
+            { id: 'bf4', text: 'Big goals to revisit annually' }
+          ]}
+        ]
+      },
+      {
+        id: 'bal_health', icon: 'H', title: 'Health',
+        subtitle: 'Movement, sleep, food, mental energy.',
+        open: true,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'bh1', text: 'Daily movement', priority: true },
+            { id: 'bh2', text: 'Sleep routine - protect it' }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'bh3', text: 'Annual physical' }
+          ]}
+        ]
+      },
+      {
+        id: 'bal_family', icon: 'E', title: 'Family',
+        subtitle: 'People who matter. Time together.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'be1', text: 'Weekly family connection', priority: true },
+            { id: 'be2', text: 'Someone you\'ve been meaning to call' }
+          ]},
+          { name: 'Later', horizon: 'later', items: [
+            { id: 'be3', text: 'Trip or adventure to plan together' }
+          ]}
+        ]
+      },
+      {
+        id: 'bal_creative', icon: 'C', title: 'Creative',
+        subtitle: 'Projects, skills, making things.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'bc1', text: 'Current creative project', priority: true }
+          ]},
+          { name: 'Soon', horizon: 'soon', items: [
+            { id: 'bc2', text: 'Skill to pick up' },
+            { id: 'bc3', text: 'Something new to try' }
+          ]},
+          { name: 'Someday', horizon: 'someday', items: [
+            { id: 'bc4', text: 'Big creative dream' }
+          ]}
+        ]
+      },
+      {
+        id: 'bal_legacy', icon: 'L', title: 'Legacy',
+        subtitle: 'Long view. What matters in 10 years.',
+        open: false,
+        sections: [
+          { name: 'Now', horizon: 'now', items: [
+            { id: 'bl1', text: 'Journal or reflect this week', priority: true }
+          ]},
+          { name: 'Someday', horizon: 'someday', items: [
+            { id: 'bl2', text: 'What do you want to be remembered for?' },
+            { id: 'bl3', text: 'Long-term project to someday start' }
+          ]}
+        ]
+      }
+    ]
+  },
+  blank: {
+    planTitle: 'My Plan',
+    planSubtitle: 'What matters. What comes next.',
+    tracks: []
+  }
+};
+
+// ============================================================
+// STATE
+// ============================================================
+const STORAGE_KEY = 'localplan_data_v1';
+const NOTICE_KEY = 'localplan_notice_dismissed_v1';
+let data = null;
+let currentHorizon = 'all';
+let dragData = null;
+let searchQuery = '';
+let reviewMode = false;
+
+// ============================================================
+// PERSISTENCE
+// ============================================================
+function storageGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) { return null; }
+}
+function storageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) { return false; }
+}
+
+async function loadData() {
+  try {
+    const raw = storageGet(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.tracks)) {
+        return parsed;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+// ── undo / redo (passive history) ─────────────────────────────────────
+// Every mutation already routes through saveData(); we snapshot the whole plan
+// body there, so undo needs NO per-action hooks. lastSnap is the last committed
+// state; recordHistory pushes it onto the undo stack whenever the state changes.
+let undoStack = [], redoStack = [], lastSnap = null;
+function recordHistory() {
+  if (!data) return;
+  const cur = JSON.stringify(data);
+  if (cur === lastSnap) return;                 // nothing changed since the last commit
+  if (lastSnap !== null) { undoStack.push(lastSnap); if (undoStack.length > 100) undoStack.shift(); redoStack = []; }
+  lastSnap = cur;
+  updateUndoButtons();
+}
+function resetHistory() { undoStack = []; redoStack = []; lastSnap = null; updateUndoButtons(); }   // call on a fresh file open so undo never crosses documents
+function updateUndoButtons() {
+  const u = document.getElementById('undo-btn'), r = document.getElementById('redo-btn');
+  if (u) u.disabled = !undoStack.length;
+  if (r) r.disabled = !redoStack.length;
+}
+function restoreSnap(s) { data = JSON.parse(s); lastSnap = s; render(); saveData(); updateUndoButtons(); }   // saveData's recordHistory is a no-op here (cur === lastSnap)
+function undo() { if (!undoStack.length) return; redoStack.push(lastSnap); restoreSnap(undoStack.pop()); }
+function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); restoreSnap(redoStack.pop()); }
+
+let saveTimeout = null;
+function saveData() {
+  recordHistory();   // capture the change for undo (runs even when embedded; the file is still the source of truth there)
+  // Embedded in the Hub the FILE is the source of truth - skip the localStorage
+  // autosave so we don't leave a stale single-slot shadow across many opened files.
+  if (window.parent !== window) return;
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    storageSet(STORAGE_KEY, JSON.stringify(data));
+    showSaveIndicator();
+    const el = document.getElementById('last-saved');
+    if (el) el.textContent = new Date().toLocaleTimeString();
+  }, 200);
+}
+
+function showSaveIndicator() {
+  const ind = document.getElementById('save-indicator');
+  if (!ind) return;
+  ind.classList.add('show');
+  clearTimeout(window.saveIndicatorTimeout);
+  window.saveIndicatorTimeout = setTimeout(() => ind.classList.remove('show'), 1200);
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function uid(prefix) {
+  return (prefix || 'id') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function matchesSearch(item) {
+  if (!searchQuery) return true;
+  const q = searchQuery.toLowerCase();
+  return item.text.toLowerCase().includes(q) ||
+         (item.detail && item.detail.toLowerCase().includes(q));
+}
+
+function shouldShowItem(item, sectionHorizon) {
+  if (searchQuery) return matchesSearch(item);
+  if (currentHorizon === 'priority') return !!item.priority;
+  if (currentHorizon === 'all') return true;
+  return sectionHorizon === currentHorizon;
+}
+
+function shouldShowSection(section) {
+  if (searchQuery) return section.items.some(matchesSearch);
+  if (currentHorizon === 'priority') return section.items.some(i => i.priority);
+  if (currentHorizon === 'all') return true;
+  return section.horizon === currentHorizon;
+}
+
+function makeEditable(el, onSave, opts) {
+  opts = opts || {};
+  if (el.classList.contains('editing')) return;
+  const originalText = el.textContent;
+  el.classList.add('editing');
+  el.setAttribute('contenteditable', 'true');
+  el.focus();
+
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  const finish = (commit) => {
+    el.removeAttribute('contenteditable');
+    el.classList.remove('editing');
+    const newText = el.textContent.trim();
+    if (commit) {
+      if (newText !== originalText.trim()) {
+        if (newText || opts.allowEmpty) {
+          onSave(newText);
+        } else {
+          el.textContent = originalText;
+        }
+      }
+    } else {
+      el.textContent = originalText;
+    }
+    el.removeEventListener('blur', onBlur);
+    el.removeEventListener('keydown', onKey);
+  };
+  const onBlur = () => finish(true);
+  const onKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      el.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      finish(false);
+    }
+  };
+  el.addEventListener('blur', onBlur);
+  el.addEventListener('keydown', onKey);
+}
+
+function findContainers(itemId) {
+  for (const track of data.tracks) {
+    for (const section of track.sections) {
+      const idx = section.items.findIndex(i => i.id === itemId);
+      if (idx !== -1) return { track, section, index: idx, item: section.items[idx] };
+    }
+  }
+  return null;
+}
+
+// ============================================================
+// DRAG AND DROP
+// ============================================================
+function initItemDrag(itemEl, item, section, track) {
+  itemEl.draggable = true;
+  itemEl.addEventListener('dragstart', (e) => {
+    dragData = { type: 'item', itemId: item.id, fromSectionName: section.name, fromTrackId: track.id };
+    itemEl.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', item.id); } catch(_) {}
+  });
+  itemEl.addEventListener('dragend', () => {
+    itemEl.classList.remove('dragging');
+    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    dragData = null;
+  });
+  itemEl.addEventListener('dragover', (e) => {
+    if (!dragData || dragData.type !== 'item') return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    itemEl.classList.add('drag-over');
+  });
+  itemEl.addEventListener('dragleave', () => itemEl.classList.remove('drag-over'));
+  itemEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    itemEl.classList.remove('drag-over');
+    if (!dragData || dragData.type !== 'item') return;
+    moveItem(dragData.itemId, dragData.fromTrackId, dragData.fromSectionName, track.id, section.name, item.id);
+  });
+}
+
+function initSectionDrop(sectionEl, section, track) {
+  sectionEl.addEventListener('dragover', (e) => {
+    if (!dragData || dragData.type !== 'item') return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  });
+  sectionEl.addEventListener('drop', (e) => {
+    if (!dragData || dragData.type !== 'item') return;
+    e.preventDefault();
+    moveItem(dragData.itemId, dragData.fromTrackId, dragData.fromSectionName, track.id, section.name, null);
+  });
+}
+
+function initTrackDrag(trackEl, track) {
+  const handle = trackEl.querySelector('.track-handle');
+  if (handle) {
+    handle.addEventListener('mousedown', () => { trackEl.draggable = true; });
+    handle.addEventListener('mouseup', () => { trackEl.draggable = false; });
+  }
+  trackEl.addEventListener('dragstart', (e) => {
+    if (dragData) return;
+    dragData = { type: 'track', trackId: track.id };
+    trackEl.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', track.id); } catch(_) {}
+  });
+  trackEl.addEventListener('dragend', () => {
+    trackEl.classList.remove('dragging');
+    trackEl.draggable = false;
+    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    dragData = null;
+  });
+  trackEl.addEventListener('dragover', (e) => {
+    if (!dragData || dragData.type !== 'track' || dragData.trackId === track.id) return;
+    e.preventDefault();
+    trackEl.classList.add('drag-over');
+  });
+  trackEl.addEventListener('dragleave', (e) => {
+    if (e.target === trackEl) trackEl.classList.remove('drag-over');
+  });
+  trackEl.addEventListener('drop', (e) => {
+    if (!dragData || dragData.type !== 'track') return;
+    e.preventDefault();
+    trackEl.classList.remove('drag-over');
+    moveTrack(dragData.trackId, track.id);
+  });
+}
+
+function moveItem(itemId, fromTrackId, fromSectionName, toTrackId, toSectionName, targetItemId) {
+  const fromTrack = data.tracks.find(t => t.id === fromTrackId);
+  const toTrack = data.tracks.find(t => t.id === toTrackId);
+  if (!fromTrack || !toTrack) return;
+  const fromSection = fromTrack.sections.find(s => s.name === fromSectionName);
+  const toSection = toTrack.sections.find(s => s.name === toSectionName);
+  if (!fromSection || !toSection) return;
+  const idx = fromSection.items.findIndex(i => i.id === itemId);
+  if (idx === -1) return;
+  const [item] = fromSection.items.splice(idx, 1);
+  if (targetItemId) {
+    const targetIdx = toSection.items.findIndex(i => i.id === targetItemId);
+    toSection.items.splice(targetIdx === -1 ? toSection.items.length : targetIdx, 0, item);
+  } else {
+    toSection.items.push(item);
+  }
+  saveData();
+  render();
+}
+
+function moveTrack(fromTrackId, toTrackId) {
+  const fromIdx = data.tracks.findIndex(t => t.id === fromTrackId);
+  const toIdx = data.tracks.findIndex(t => t.id === toTrackId);
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+  const [track] = data.tracks.splice(fromIdx, 1);
+  data.tracks.splice(toIdx, 0, track);
+  saveData();
+  render();
+}
+
+// ============================================================
+// MENUS
+// ============================================================
+let openMenu = null;
+function closeMenus() {
+  if (openMenu) {
+    openMenu.remove();
+    openMenu = null;
+  }
+}
+document.addEventListener('click', (e) => {
+  if (openMenu && !openMenu.contains(e.target)) closeMenus();
+});
+
+function showTrackMenu(btn, track) {
+  closeMenus();
+  const menu = document.createElement('div');
+  menu.className = 'menu-popup ui';
+  menu.innerHTML = `
+    <button data-action="rename">Rename</button>
+    <button data-action="add-section">Add section</button>
+    <button class="danger" data-action="delete">Delete track</button>
+  `;
+  document.body.appendChild(menu);
+  const rect = btn.getBoundingClientRect();
+  menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  menu.style.left = (rect.left + window.scrollX - menu.offsetWidth + rect.width) + 'px';
+  menu.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = b.dataset.action;
+      closeMenus();
+      if (action === 'rename') {
+        const h2 = document.querySelector(`.track[data-track="${track.id}"] h2`);
+        if (h2) makeEditable(h2, (v) => { track.title = v; saveData(); render(); });
+      } else if (action === 'add-section') {
+        const name = prompt('Section name:', 'New section');
+        if (name && name.trim()) {
+          track.sections.push({ name: name.trim(), horizon: 'now', items: [] });
+          saveData();
+          render();
+        }
+      } else if (action === 'delete') {
+        if (confirm(`Delete track "${track.title}" and all its items?`)) {
+          data.tracks = data.tracks.filter(t => t.id !== track.id);
+          saveData();
+          render();
+        }
+      }
+    });
+  });
+  openMenu = menu;
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function render() {
+  if (data && lastSnap === null) lastSnap = JSON.stringify(data);   // baseline the undo history on first render of a document
+  const reviewBtn = document.getElementById('review-btn');
+  if (reviewBtn) reviewBtn.classList.toggle('active', reviewMode);
+
+  const titleEl = document.getElementById('plan-title');
+  const subEl = document.getElementById('plan-subtitle');
+  if (titleEl) titleEl.textContent = data.planTitle || 'My Plan';
+  if (subEl) subEl.textContent = data.planSubtitle || 'What matters. What comes next.';
+
+  const container = document.getElementById('tracks-container');
+  container.innerHTML = '';
+
+  if (reviewMode) { renderReview(container); return; }
+
+  if (data.tracks.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.innerHTML = 'No tracks yet. Add one below to get started.';
+    container.appendChild(empty);
+  }
+
+  data.tracks.forEach(track => {
+    let total = 0, done = 0;
+    track.sections.forEach(s => {
+      if (shouldShowSection(s)) {
+        s.items.forEach(i => {
+          if (shouldShowItem(i, s.horizon)) {
+            total++;
+            if (i.done) done++;
+          }
+        });
+      }
+    });
+
+    if (searchQuery && total === 0) return;
+    if (!searchQuery && currentHorizon === 'priority' && total === 0) return;
+
+    const trackEl = document.createElement('div');
+    trackEl.className = 'track' + ((searchQuery || track.open) ? ' open' : '');
+    trackEl.dataset.track = track.id;
+
+    const header = document.createElement('div');
+    header.className = 'track-header';
+    header.innerHTML = `
+      <span class="track-handle" title="Drag to reorder">⋮⋮</span>
+      <svg class="track-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      <div class="track-icon">${escapeHtml(track.icon)}</div>
+      <div class="track-title">
+        <h2 title="Click to rename">${escapeHtml(track.title)}</h2>
+        <div class="track-sub" title="Click to edit">${escapeHtml(track.subtitle)}</div>
+      </div>
+      <div class="track-progress ui">${done}/${total}</div>
+      <button class="track-menu-btn ui" title="Track options">⋯</button>
+    `;
+
+    const titleH = header.querySelector('h2');
+    const subDiv = header.querySelector('.track-sub');
+    titleH.addEventListener('click', (e) => {
+      e.stopPropagation();
+      makeEditable(titleH, (v) => { track.title = v; saveData(); render(); });
+    });
+    subDiv.addEventListener('click', (e) => {
+      e.stopPropagation();
+      makeEditable(subDiv, (v) => { track.subtitle = v; saveData(); render(); }, { allowEmpty: true });
+    });
+    const menuBtn = header.querySelector('.track-menu-btn');
+    menuBtn.addEventListener('click', (e) => { e.stopPropagation(); showTrackMenu(menuBtn, track); });
+
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('h2, .track-sub, .track-menu-btn, .track-handle, .menu-popup')) return;
+      track.open = !track.open;
+      saveData();
+      render();
+    });
+    trackEl.appendChild(header);
+
+    initTrackDrag(trackEl, track);
+
+    const body = document.createElement('div');
+    body.className = 'track-body';
+    const content = document.createElement('div');
+    content.className = 'track-content';
+
+    const filteredSections = track.sections.filter(shouldShowSection);
+
+    if (filteredSections.length === 0 && track.sections.length > 0) {
+      content.innerHTML = '<div class="empty-state">Nothing in this view.</div>';
+    } else if (track.sections.length === 0) {
+      content.innerHTML = '<div class="empty-state">No sections yet. Use the ⋯ menu to add one.</div>';
+    }
+
+    filteredSections.forEach(section => {
+      const sectionEl = document.createElement('div');
+      sectionEl.className = 'section';
+
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'section-header';
+      const sectionHandle = document.createElement('span');
+      sectionHandle.className = 'section-handle';
+      sectionHandle.textContent = '⋮⋮';
+      sectionHeader.appendChild(sectionHandle);
+      const label = document.createElement('div');
+      label.className = 'section-label';
+      label.textContent = section.name;
+      label.title = 'Click to rename section';
+      label.addEventListener('click', (e) => {
+        e.stopPropagation();
+        makeEditable(label, (v) => { section.name = v; saveData(); render(); });
+      });
+      const rule = document.createElement('div');
+      rule.className = 'section-rule';
+      sectionHeader.appendChild(label);
+      sectionHeader.appendChild(rule);
+      sectionEl.appendChild(sectionHeader);
+
+      initSectionDrop(sectionEl, section, track);
+
+      section.items.forEach(item => {
+        if (!shouldShowItem(item, section.horizon)) return;
+
+        const itemEl = document.createElement('div');
+        itemEl.className = 'item' + (item.done ? ' done' : '') + (item.priority ? ' priority' : '');
+
+        const dragHandle = document.createElement('span');
+        dragHandle.className = 'item-drag-handle';
+        dragHandle.textContent = '⋮⋮';
+        dragHandle.title = 'Drag to move';
+        itemEl.appendChild(dragHandle);
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'item-checkbox';
+        checkbox.checked = !!item.done;
+        checkbox.title = item.done ? 'Mark as not done' : 'Mark as done';
+        checkbox.addEventListener('change', () => {
+          item.done = checkbox.checked;
+          if (item.done && item.recur) {
+            item.doneDate = getTodayStr();
+          } else if (!item.done) {
+            delete item.doneDate;
+          }
+          saveData();
+          render();
+        });
+        itemEl.appendChild(checkbox);
+
+        const star = document.createElement('button');
+        star.className = 'star-btn' + (item.priority ? ' starred' : '');
+        star.innerHTML = item.priority ? '★' : '☆';
+        star.title = item.priority ? 'Remove from Today' : 'Add to Today';
+        star.addEventListener('click', (e) => {
+          e.stopPropagation();
+          item.priority = !item.priority;
+          saveData();
+          render();
+        });
+        itemEl.appendChild(star);
+
+        const textWrap = document.createElement('div');
+        textWrap.className = 'item-text';
+
+        const main = document.createElement('div');
+        main.className = 'item-text-main';
+        main.textContent = item.text;
+        main.title = 'Click to edit';
+        main.addEventListener('click', (e) => {
+          e.stopPropagation();
+          makeEditable(main, (newText) => {
+            item.text = newText;
+            saveData();
+            render();
+          });
+        });
+        textWrap.appendChild(main);
+
+        if (item.detail) {
+          const toggle = document.createElement('button');
+          toggle.className = 'item-detail-toggle ui';
+          toggle.textContent = 'more';
+          const detail = document.createElement('div');
+          detail.className = 'item-detail hidden';
+          detail.textContent = item.detail;
+          detail.title = 'Click to edit note';
+          detail.addEventListener('click', (e) => {
+            e.stopPropagation();
+            makeEditable(detail, (newText) => {
+              if (newText) item.detail = newText;
+              else delete item.detail;
+              saveData();
+              render();
+            }, { allowEmpty: true });
+          });
+          toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            detail.classList.toggle('hidden');
+            toggle.textContent = detail.classList.contains('hidden') ? 'more' : 'less';
+          });
+          textWrap.appendChild(toggle);
+          textWrap.appendChild(detail);
+        } else {
+          const addDetail = document.createElement('button');
+          addDetail.className = 'item-detail-toggle ui';
+          addDetail.textContent = '+ add note';
+          addDetail.addEventListener('click', (e) => {
+            e.stopPropagation();
+            item.detail = 'Click to write a note';
+            saveData();
+            render();
+          });
+          textWrap.appendChild(addDetail);
+        }
+        const breakBtn = document.createElement('button');
+        breakBtn.className = 'item-detail-toggle ui ai-break';
+        breakBtn.textContent = '✦ break down';
+        breakBtn.title = 'AI: break this into steps (local Ollama)';
+        breakBtn.addEventListener('click', (e) => { e.stopPropagation(); aiDecompose(item, section); });
+        textWrap.appendChild(breakBtn);
+        itemEl.appendChild(textWrap);
+
+        if (item.recur) {
+          const badge = document.createElement('select');
+          badge.className = 'recur-badge ui';
+          badge.title = 'Change or remove recurrence';
+          RECUR_OPTIONS.forEach(([v, l]) => {
+            const o = document.createElement('option');
+            o.value = v; o.textContent = l;
+            if (v === item.recur) o.selected = true;
+            badge.appendChild(o);
+          });
+          const removeOpt = document.createElement('option');
+          removeOpt.value = ''; removeOpt.textContent = '✕ Remove repeat';
+          badge.appendChild(removeOpt);
+          badge.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (e.target.value) {
+              item.recur = e.target.value;
+            } else {
+              delete item.recur;
+              delete item.doneDate;
+            }
+            saveData();
+            render();
+          });
+          itemEl.appendChild(badge);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'item-actions ui';
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete';
+        delBtn.textContent = 'delete';
+        delBtn.title = 'Delete item';
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (confirm('Delete this item?')) {
+            section.items = section.items.filter(i => i.id !== item.id);
+            saveData();
+            render();
+          }
+        });
+        actions.appendChild(delBtn);
+        itemEl.appendChild(actions);
+
+        initItemDrag(itemEl, item, section, track);
+
+        sectionEl.appendChild(itemEl);
+      });
+
+      const addForm = document.createElement('div');
+      addForm.className = 'add-item';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = `Add to ${section.name}...`;
+
+      const recurSel = document.createElement('select');
+      recurSel.className = 'add-recur ui';
+      recurSel.title = 'Set recurrence';
+      const noneOpt = document.createElement('option');
+      noneOpt.value = ''; noneOpt.textContent = '↻';
+      recurSel.appendChild(noneOpt);
+      RECUR_OPTIONS.forEach(([v, l]) => {
+        const o = document.createElement('option');
+        o.value = v; o.textContent = l;
+        recurSel.appendChild(o);
+      });
+      recurSel.addEventListener('change', () => {
+        recurSel.classList.toggle('active', recurSel.value !== '');
+      });
+
+      const btn = document.createElement('button');
+      btn.textContent = 'Add';
+      const addNew = () => {
+        const v = input.value.trim();
+        if (!v) return;
+        const item = { id: uid('item'), text: v, done: false };
+        if (recurSel.value) item.recur = recurSel.value;
+        section.items.push(item);
+        input.value = '';
+        recurSel.value = '';
+        recurSel.classList.remove('active');
+        saveData();
+        render();
+      };
+      btn.addEventListener('click', addNew);
+      input.addEventListener('keypress', (e) => { if (e.key === 'Enter') addNew(); });
+      addForm.appendChild(input);
+      addForm.appendChild(recurSel);
+      addForm.appendChild(btn);
+      sectionEl.appendChild(addForm);
+
+      content.appendChild(sectionEl);
+    });
+
+    body.appendChild(content);
+    trackEl.appendChild(body);
+    container.appendChild(trackEl);
+  });
+}
+
+// ============================================================
+// ACTIONS
+// ============================================================
+function expandAll() {
+  data.tracks.forEach(t => t.open = true);
+  saveData();
+  render();
+}
+
+function collapseAll() {
+  data.tracks.forEach(t => t.open = false);
+  saveData();
+  render();
+}
+
+function exportData() {
+  try {
+    // back up as the shared localoffice/v1 plan envelope
+    const env = LocalOffice.createEnvelope('plan', { title: (data && data.planTitle) || 'My Plan', app: 'localplan@1.0', body: data });
+    const blob = new Blob([LocalOffice.serialize(env)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (LocalOffice.slugify((data && data.planTitle) || '') || 'my-plan') + '.localoffice.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+  } catch (e) {
+    alert('Could not download backup. Try copying the URL bar to your bookmarks instead.');
+  }
+}
+
+function importData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        // read the localoffice/v1 plan envelope, OR a legacy { tracks } backup
+        const { envelope } = LocalOffice.parse(ev.target.result, {
+          coerce: raw => (raw && Array.isArray(raw.tracks))
+            ? LocalOffice.createEnvelope('plan', { title: raw.planTitle || 'My Plan', app: 'localplan@1.0', body: raw })
+            : null
+        });
+        if (envelope.type !== 'plan') { alert('That file is a "' + envelope.type + '" file, not a plan.'); return; }
+        const body = envelope.body;
+        if (!body || !Array.isArray(body.tracks)) { alert('That file doesn\'t look like a valid plan.'); return; }
+        if (data && Array.isArray(data.tracks) && data.tracks.length > 0 && !confirm('Replace your current plan with this backup?')) return;
+        data = coercePlanBody(body);
+        if (!data.planTitle && envelope.meta && envelope.meta.title) data.planTitle = envelope.meta.title;
+        resetHistory();
+        render();
+        saveData();
+        alert('Plan restored.');
+      } catch (err) {
+        alert('That file doesn\'t look like a valid backup.');
+      }
+    };
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
+// ── localoffice/v1 file IO (Open / Save / Save As) + Print + plan zoom ──
+let fileHandle = null;
+function planEnvelope() { return LocalOffice.createEnvelope('plan', { title: (data && data.planTitle) || 'My Plan', app: 'localplan@1.0', body: data }); }
+// Harden a loaded plan body so a malformed file can't crash render(). The open
+// guards only check `Array.isArray(body.tracks)`; a track without `sections`, a
+// section without `items`, or any of those as a non-array threw in render() - and
+// because `data` was assigned (and saveData fired) BEFORE render, the crash left a
+// corrupt body autosaved over the user's good plan (a bricked tool on reload).
+// We coerce in place: drop non-object tracks/sections, default missing arrays, and
+// keep every other (unknown) field for forward-compat. Never throws.
+function coercePlanBody(body) {
+  if (!body || typeof body !== 'object') return { planTitle: 'My Plan', tracks: [] };
+  body.tracks = (Array.isArray(body.tracks) ? body.tracks : []).filter(t => t && typeof t === 'object').map(t => {
+    t.sections = (Array.isArray(t.sections) ? t.sections : []).filter(s => s && typeof s === 'object').map(s => {
+      s.items = (Array.isArray(s.items) ? s.items : []).map(i => (i && typeof i === 'object') ? i : { id: 'lo' + Math.random().toString(36).slice(2), text: String(i) });
+      s.items.forEach(i => { if (!i.id) i.id = 'lo' + Math.random().toString(36).slice(2); });
+      return s;
+    });
+    return t;
+  });
+  return body;
+}
+async function openPlan() {
+  try {
+    const res = await LocalOffice.openFile({ coerce: raw => (raw && Array.isArray(raw.tracks)) ? LocalOffice.createEnvelope('plan', { title: raw.planTitle || 'My Plan', app: 'localplan@1.0', body: raw }) : null });
+    if (res.envelope.type !== 'plan') { alert('That file is a "' + res.envelope.type + '" file, not a plan.'); return; }
+    const body = res.envelope.body;
+    if (!body || !Array.isArray(body.tracks)) { alert('That file doesn\'t look like a valid plan.'); return; }
+    if (data && Array.isArray(data.tracks) && data.tracks.length > 0 && !confirm('Replace your current plan with this file?')) return;
+    data = coercePlanBody(body);
+    if (!data.planTitle && res.envelope.meta && res.envelope.meta.title) data.planTitle = res.envelope.meta.title;
+    resetHistory();
+    fileHandle = res.handle; hideBraindump(); hideWelcome(); render(); saveData(); showSaveIndicator();
+  } catch (e) { if (e && e.name !== 'AbortError') alert('Open failed: ' + e.message); }
+}
+async function savePlan() {
+  try { const res = await LocalOffice.saveFile(planEnvelope(), fileHandle); fileHandle = res.handle; showSaveIndicator(); }
+  catch (e) { if (e && e.name !== 'AbortError') alert('Save failed: ' + e.message); }
+}
+async function savePlanAs() {
+  try { const env = planEnvelope(); const res = await LocalOffice.saveFileAs(env, LocalOffice.suggestedName(env)); fileHandle = res.handle; showSaveIndicator(); }
+  catch (e) { if (e && e.name !== 'AbortError') alert('Save failed: ' + e.message); }
+}
+function printPlan() { window.print(); }
+
+// ════════════════════════════════════════════════════════════════════
+// LOCAL AI (Ollama) - OPTIONAL, advisory only, the ONLY network call.
+// Distills notes into braindump lines (piped to the existing parser),
+// breaks a task into steps, and suggests priorities. The AI proposes; you
+// apply. Every output is validated before it can touch the plan.
+// ════════════════════════════════════════════════════════════════════
+const DISTILL_PROMPT = `You are an expert organizer. Extract concrete action items from the user's text.
+Return ONLY plain text, one item per line, in this exact format:
+track > Horizon: task text
+Horizon MUST be one of: Now, Soon, Later, Someday. Append (priority) to the few most urgent items.
+Use short lowercase track names (career, health, family, finance, home, projects, life).
+Example:
+career > Now: finish the quarterly review (priority)
+health > Soon: book a checkup
+No markdown, no code fences, no commentary - only the lines.`;
+const DECOMPOSE_PROMPT = `You are a productivity coach. Break the user's single task into 3 to 5 specific, sequential, actionable steps.
+Return STRICT JSON only: { "steps": ["step 1", "step 2", "step 3"] }. No markdown, no commentary.`;
+const PRIORITIZE_PROMPT = `You are an executive coach. From the JSON list of the user's active tasks, choose the 3-5 highest-leverage ones (those that unblock other work or need deep focus).
+Return STRICT JSON only: { "strategy": "one sentence", "selected_ids": ["id1","id2"] }.
+"strategy" is plain English for the user - refer to tasks by their words, and NEVER mention ids, codes, or task numbers in it.
+"selected_ids" must use only ids present in the input. No markdown.`;
+
+const AI = {
+  host: 'http://localhost:11434', model: '', models: [], abort: null,
+  async detect() {
+    setAiStatus('Detecting Ollama…');
+    try {
+      const res = await fetch(this.host + '/api/tags'); if (!res.ok) throw new Error('HTTP ' + res.status);
+      this.models = ((await res.json()).models || []).map(m => m.name);
+      const sel = document.getElementById('ai-model');
+      if (!this.models.length) { sel.innerHTML = '<option value="">(no models - run: ollama pull llama3.2)</option>'; setAiStatus('Ollama is running but has no models.'); return; }
+      sel.innerHTML = this.models.map(m => `<option>${escapeHtml(m)}</option>`).join('');
+      if (!this.model || !this.models.includes(this.model)) this.model = this.models[0];
+      sel.value = this.model;
+      setAiStatus(`Connected · ${this.models.length} model${this.models.length > 1 ? 's' : ''}.`);
+    } catch (e) { document.getElementById('ai-model').innerHTML = '<option value="">(Ollama not detected)</option>'; setAiStatus('Cannot reach Ollama. See ai/SYSTEM_PROMPT.md.', true); }
+  },
+  async ensureModel() { if (this.model) return this.model; await this.detect(); return this.model; },
+  async _call(prompt, system, json, onTick) {
+    const model = await this.ensureModel(); if (!model) throw new Error('No Ollama model available.');
+    this.abort = new AbortController();
+    const t0 = Date.now(); const tick = setInterval(() => (onTick || setAiStatus)(`Thinking… ${((Date.now() - t0) / 1000).toFixed(1)}s`), 200);
+    try {
+      const body = { model, prompt, system, stream: false, options: { temperature: json ? 0 : 0.2 } };
+      if (json) body.format = 'json';
+      const res = await fetch(this.host + '/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: this.abort.signal });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const out = await res.json();
+      return json ? JSON.parse(out.response) : (out.response || '');
+    } finally { clearInterval(tick); this.abort = null; }
+  },
+  generateText(p, s, t) { return this._call(p, s, false, t); },
+  generateJSON(p, s, t) { return this._call(p, s, true, t); },
+  show() { document.getElementById('ai-panel').classList.remove('hidden'); this.detect(); },
+  hide() { document.getElementById('ai-panel').classList.add('hidden'); }
+};
+function setAiStatus(msg, err) { const s = document.getElementById('ai-status'); if (!s) return; s.textContent = msg; s.classList.toggle('err', !!err); }
+
+// Feature 1 - Distill: notes → braindump lines → existing importFromText()
+async function aiDistill() {
+  const src = document.getElementById('ai-distill-input').value.trim();
+  if (!src) { setAiStatus('Paste some text first.', true); return; }
+  const btn = document.getElementById('ai-distill-btn'), stop = document.getElementById('ai-stop');
+  btn.classList.add('hidden'); stop.classList.remove('hidden');
+  try {
+    const out = await AI.generateText(`Extract tasks from:\n\n${src}`, DISTILL_PROMPT);
+    const lines = String(out).split('\n').map(l => l.trim()).filter(l => l && parseBraindumpLine(l)); // keep only parser-valid lines
+    if (!lines.length) { setAiStatus('No usable lines returned.', true); return; }
+    document.getElementById('ai-distill-ta').value = lines.join('\n');
+    document.getElementById('ai-distill-preview').classList.remove('hidden');
+    setAiStatus(`Drafted ${lines.length} item(s) - review, then add.`);
+  } catch (e) { setAiStatus(e.name === 'AbortError' ? 'Cancelled.' : ('Error: ' + e.message), true); }
+  finally { btn.classList.remove('hidden'); stop.classList.add('hidden'); }
+}
+function aiApplyDistill() {
+  const n = importFromText(document.getElementById('ai-distill-ta').value);
+  saveData(); render();
+  document.getElementById('ai-distill-preview').classList.add('hidden');
+  document.getElementById('ai-distill-input').value = '';
+  setAiStatus(`Added ${n} item(s) to your plan.`);
+}
+
+// Feature 2 - Decompose: one task → 3-5 steps appended below it (you confirm)
+async function aiDecompose(item, section) {
+  try {
+    setAiStatus('Asking AI to break it down…');
+    const out = await AI.generateJSON(`Task: ${item.text}`, DECOMPOSE_PROMPT);
+    const steps = (out && Array.isArray(out.steps) ? out.steps : []).map(s => String(s).trim()).filter(Boolean).slice(0, 6);
+    if (steps.length < 2) { alert('AI did not return usable steps.'); return; }
+    if (!confirm('Add these steps under "' + item.text + '"?\n\n• ' + steps.join('\n• '))) return;
+    const idx = section.items.indexOf(item);
+    section.items.splice(idx + 1, 0, ...steps.map(text => ({ id: uid('item'), text, done: false })));
+    saveData(); render();
+  } catch (e) { alert(e.name === 'AbortError' ? 'Cancelled.' : ('Break-down failed: ' + e.message)); }
+}
+
+// strip any internal ids the model may have echoed into human-facing prose,
+// then tidy the leftover empty parens / stray punctuation / double spaces.
+function stripIds(text, ids) {
+  let s = String(text || '');
+  const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  ids.forEach(id => {
+    s = s.replace(new RegExp('\\s*\\(\\s*' + esc(id) + '\\s*\\)', 'g'), '');     // always drop parenthesized ids: " (pk3)"
+    if (id.length >= 4 || /[_\d]/.test(id)) s = s.replace(new RegExp('\\s*\\b' + esc(id) + '\\b', 'g'), ''); // bare, only when id-like (not a real word)
+  });
+  return s.replace(/\(\s*[,;]?\s*\)/g, '').replace(/\(\s*and\s*\)/gi, '')
+          .replace(/\s+([.,;:)])/g, '$1').replace(/\(\s+/g, '(')
+          .replace(/\s{2,}/g, ' ').replace(/\s*,\s*\./g, '.').trim();
+}
+
+// Feature 3 - Suggest priorities: rank active tasks, validate ids, star on apply
+let aiPrioIds = [];
+async function aiPrioritize() {
+  const active = [];
+  data.tracks.forEach(t => t.sections.forEach(s => {
+    if (s.horizon === 'now' || s.horizon === 'soon') s.items.forEach(i => { if (!i.done) active.push({ id: i.id, text: i.text, track: t.title }); });
+  }));
+  if (!active.length) { setAiStatus('No active Now/Soon tasks to rank.', true); return; }
+  try {
+    const out = await AI.generateJSON('Active tasks:\n' + JSON.stringify(active), PRIORITIZE_PROMPT);
+    const valid = new Set(active.map(a => a.id));
+    aiPrioIds = (out && Array.isArray(out.selected_ids) ? out.selected_ids : []).filter(id => valid.has(id)); // drop hallucinated ids
+    const box = document.getElementById('ai-prio-result'), apply = document.getElementById('ai-prio-apply');
+    if (!aiPrioIds.length) { box.textContent = 'AI did not select any valid tasks.'; box.classList.remove('hidden'); apply.classList.add('hidden'); return; }
+    const byId = {}; active.forEach(a => byId[a.id] = a);
+    const strategy = stripIds(out.strategy, active.map(a => a.id)); // never show internal ids in the prose
+    box.innerHTML = (strategy ? `<i>${escapeHtml(strategy)}</i>` : '') + '<ul>' + aiPrioIds.map(id => `<li>${escapeHtml(byId[id].text)} <span class="status">(${escapeHtml(byId[id].track)})</span></li>`).join('') + '</ul>';
+    box.classList.remove('hidden'); apply.classList.remove('hidden');
+    setAiStatus(`Suggested ${aiPrioIds.length} priorities - review, then star.`);
+  } catch (e) { setAiStatus(e.name === 'AbortError' ? 'Cancelled.' : ('Error: ' + e.message), true); }
+}
+function aiApplyPriorities() {
+  const set = new Set(aiPrioIds); let n = 0;
+  data.tracks.forEach(t => t.sections.forEach(s => s.items.forEach(i => { if (set.has(i.id)) { i.priority = true; n++; } })));
+  saveData(); render();
+  document.getElementById('ai-prio-apply').classList.add('hidden');
+  setAiStatus(`Starred ${n} task(s) for Today.`);
+}
+
+// wire the drawer (its DOM exists before this script runs)
+document.getElementById('ai-distill-btn').addEventListener('click', aiDistill);
+document.getElementById('ai-distill-apply').addEventListener('click', aiApplyDistill);
+document.getElementById('ai-stop').addEventListener('click', () => { if (AI.abort) AI.abort.abort(); });
+document.getElementById('ai-prio-btn').addEventListener('click', aiPrioritize);
+document.getElementById('ai-prio-apply').addEventListener('click', aiApplyPriorities);
+document.getElementById('ai-model').addEventListener('change', e => { AI.model = e.target.value; });
+
+let planZoom = 1;
+function applyPlanZoom() { document.documentElement.style.setProperty('--plan-zoom', planZoom); const l = document.getElementById('zoom-label'); if (l) l.textContent = Math.round(planZoom * 100) + '%'; try { storageSet('localplan_zoom', String(planZoom)); } catch (e) {} }
+function setPlanZoom(z) { planZoom = Math.max(0.5, Math.min(2, Math.round(z * 100) / 100)); applyPlanZoom(); }
+
+function resetToWelcome() {
+  if (!confirm('Start over? Your current plan will be erased.\n\nTip: Save to a file first if you want to keep anything.')) return;
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  try { localStorage.removeItem(NOTICE_KEY); } catch (e) {}
+  data = null; fileHandle = null;
+  // start at the brain-dump screen (it has "Skip - choose a starter pack"),
+  // so Start over offers the same brain-dump-or-pack choice as first run
+  showBraindump();
+}
+
+function dismissNotice() {
+  storageSet(NOTICE_KEY, '1');
+  const el = document.getElementById('storage-notice');
+  if (el) el.style.display = 'none';
+}
+
+function addTrack() {
+  const name = prompt('New track name:', 'New track');
+  if (!name || !name.trim()) return;
+  data.tracks.push({
+    id: uid('track'),
+    icon: name.trim().charAt(0).toUpperCase(),
+    title: name.trim(),
+    subtitle: 'Click to add a description',
+    open: true,
+    sections: [
+      { name: 'Now', horizon: 'now', items: [] }
+    ]
+  });
+  saveData();
+  render();
+}
+
+// ============================================================
+// RECURRING TASKS
+// ============================================================
+const RECUR_OPTIONS = [
+  ['daily',    '↻ Daily'],
+  ['workdays', '↻ Workdays'],
+  ['weekly',   '↻ Weekly'],
+  ['monthly',  '↻ Monthly'],
+  ['yearly',   '↻ Yearly'],
+];
+
+function getTodayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isRecurDue(recur, doneDate) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const done = new Date(doneDate);
+  done.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today - done) / 86400000);
+  switch (recur) {
+    case 'daily':    return diffDays >= 1;
+    case 'workdays': return today.getDay() >= 1 && today.getDay() <= 5 && diffDays >= 1;
+    case 'weekly':   return diffDays >= 7;
+    case 'monthly':  return today.getMonth()    !== done.getMonth()    || today.getFullYear() !== done.getFullYear();
+    case 'yearly':   return today.getFullYear() !== done.getFullYear();
+    default:         return false;
+  }
+}
+
+function processRecurring() {
+  let dirty = false;
+  data.tracks.forEach(track =>
+    track.sections.forEach(section =>
+      section.items.forEach(item => {
+        if (!item.recur || !item.done || !item.doneDate) return;
+        if (isRecurDue(item.recur, item.doneDate)) {
+          item.done = false;
+          delete item.doneDate;
+          dirty = true;
+        }
+      })
+    )
+  );
+  if (dirty) saveData();
+}
+
+// ============================================================
+// PASTE IMPORT
+// ============================================================
+const HORIZONS_MAP = { now: 'Now', soon: 'Soon', later: 'Later', someday: 'Someday' };
+
+function parseBraindumpLine(line) {
+  const raw = line.trim();
+  if (!raw || raw.startsWith('#')) return null;
+  if (!raw.includes(':')) return null;
+
+  const colonIdx = raw.indexOf(':');
+  let trackPart = raw.slice(0, colonIdx).trim();
+  let itemPart = raw.slice(colonIdx + 1).trim();
+  if (!trackPart || !itemPart) return null;
+
+  let explicitSection = null;
+  if (trackPart.includes('>')) {
+    const gtIdx = trackPart.indexOf('>');
+    explicitSection = trackPart.slice(gtIdx + 1).trim();
+    trackPart = trackPart.slice(0, gtIdx).trim();
+  }
+
+  let detail = null;
+  const dashIdx = itemPart.indexOf('--');
+  if (dashIdx !== -1) {
+    detail = itemPart.slice(dashIdx + 2).trim() || null;
+    itemPart = itemPart.slice(0, dashIdx).trim();
+  }
+
+  let sectionName = 'Now';
+  let horizon = 'now';
+  const horizonMatch = itemPart.match(/\[([^\]]+)\]/);
+  if (horizonMatch) {
+    const tag = horizonMatch[1].trim().toLowerCase();
+    if (HORIZONS_MAP[tag]) {
+      horizon = tag;
+      sectionName = HORIZONS_MAP[tag];
+    } else {
+      sectionName = horizonMatch[1].trim();
+    }
+    itemPart = (itemPart.slice(0, horizonMatch.index) + itemPart.slice(horizonMatch.index + horizonMatch[0].length)).trim();
+  }
+
+  if (explicitSection) {
+    sectionName = explicitSection;
+    const lo = explicitSection.toLowerCase();
+    if (HORIZONS_MAP[lo]) horizon = lo;
+  }
+
+  let priority = false;
+  const prioMatch = itemPart.match(/\(priority\)/i);
+  if (prioMatch) {
+    priority = true;
+    itemPart = (itemPart.slice(0, prioMatch.index) + itemPart.slice(prioMatch.index + prioMatch[0].length)).trim();
+  }
+
+  itemPart = itemPart.replace(/\s+/g, ' ').trim();
+  if (!itemPart) return null;
+
+  return { trackName: trackPart, sectionName, horizon, text: itemPart, priority, detail };
+}
+
+function importFromText(text) {
+  const lines = text.split('\n');
+  const trackIndex = {};
+  data.tracks.forEach(t => { trackIndex[t.title.toLowerCase()] = t; });
+  let count = 0;
+
+  for (const line of lines) {
+    const parsed = parseBraindumpLine(line);
+    if (!parsed) continue;
+    const { trackName, sectionName, horizon, text, priority, detail } = parsed;
+
+    let track = trackIndex[trackName.toLowerCase()];
+    if (!track) {
+      track = {
+        id: uid('track'),
+        icon: trackName.trim()[0].toUpperCase(),
+        title: trackName,
+        subtitle: 'Click to add a description',
+        open: true,
+        sections: []
+      };
+      data.tracks.push(track);
+      trackIndex[trackName.toLowerCase()] = track;
+    }
+
+    let section = track.sections.find(s => s.name.toLowerCase() === sectionName.toLowerCase());
+    if (!section) {
+      section = { name: sectionName, horizon, items: [] };
+      track.sections.push(section);
+    }
+
+    const item = { id: uid('item'), text, done: false };
+    if (priority) item.priority = true;
+    if (detail) item.detail = detail;
+    section.items.push(item);
+    count++;
+  }
+  return count;
+}
+
+// ============================================================
+// BRAINDUMP FIRST-RUN OVERLAY
+// ============================================================
+function showBraindump() {
+  document.getElementById('braindump-overlay').classList.add('show');
+  setTimeout(() => {
+    const ta = document.getElementById('braindump-ta');
+    if (ta) ta.focus();
+  }, 80);
+}
+
+function hideBraindump() {
+  document.getElementById('braindump-overlay').classList.remove('show');
+}
+
+function skipBraindump() {
+  hideBraindump();
+  showWelcome();
+}
+
+function runBraindump() {
+  const ta = document.getElementById('braindump-ta');
+  const errEl = document.getElementById('braindump-error');
+  const text = ta ? ta.value.trim() : '';
+  if (!text) {
+    if (errEl) errEl.textContent = 'Type a few thoughts first, or skip to choose a starter pack.';
+    return;
+  }
+  if (errEl) errEl.textContent = '';
+  data = { planTitle: 'My Plan', planSubtitle: 'What matters. What comes next.', tracks: [] };
+  const count = importBraindumpText(text);
+  if (count === 0) {
+    if (errEl) errEl.textContent = 'Nothing parsed. Try plain lines or use format: "work: prep for meeting"';
+    return;
+  }
+  saveData();
+  hideBraindump();
+  render();
+}
+
+function importBraindumpText(text) {
+  const lines = text.split('\n');
+  const trackIndex = {};
+  data.tracks.forEach(t => { trackIndex[t.title.toLowerCase()] = t; });
+  let count = 0;
+
+  const ensureTrack = (title) => {
+    const key = title.toLowerCase();
+    if (!trackIndex[key]) {
+      const t = {
+        id: uid('track'),
+        icon: title.trim()[0].toUpperCase(),
+        title,
+        subtitle: 'Click to add a description',
+        open: true,
+        sections: []
+      };
+      data.tracks.push(t);
+      trackIndex[key] = t;
+    }
+    return trackIndex[key];
+  };
+
+  const ensureSection = (track, sectionName, horizon) => {
+    let s = track.sections.find(s => s.name.toLowerCase() === sectionName.toLowerCase());
+    if (!s) { s = { name: sectionName, horizon, items: [] }; track.sections.push(s); }
+    return s;
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const parsed = parseBraindumpLine(line);
+    if (parsed) {
+      const { trackName, sectionName, horizon, text, priority, detail } = parsed;
+      const track = ensureTrack(trackName);
+      const section = ensureSection(track, sectionName, horizon);
+      const item = { id: uid('item'), text, done: false };
+      if (priority) item.priority = true;
+      if (detail) item.detail = detail;
+      section.items.push(item);
+      count++;
+    } else {
+      // Plain line - no track prefix - goes to Inbox > Now
+      const track = ensureTrack('Inbox');
+      const section = ensureSection(track, 'Now', 'now');
+      section.items.push({ id: uid('item'), text: line, done: false });
+      count++;
+    }
+  }
+  return count;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const ta = document.getElementById('braindump-ta');
+  if (ta) {
+    ta.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        runBraindump();
+      }
+    });
+  }
+});
+
+// ============================================================
+// REVIEW MODE
+// ============================================================
+function toggleReview() {
+  reviewMode = !reviewMode;
+  render();
+}
+
+function renderReview(container) {
+  const btn = document.getElementById('review-btn');
+  if (btn) btn.classList.add('active');
+
+  const activeItems = [];
+  const sleepingItems = [];
+  const completedItems = [];
+
+  data.tracks.forEach(track => {
+    track.sections.forEach(section => {
+      section.items.forEach(item => {
+        const entry = { item, track, section };
+        if (item.done) {
+          completedItems.push(entry);
+        } else if (section.horizon === 'someday') {
+          sleepingItems.push(entry);
+        } else if (section.horizon === 'now' || section.horizon === 'soon') {
+          activeItems.push(entry);
+        }
+      });
+    });
+  });
+
+  const makeSection = (heading, entries, extraClass) => {
+    const sec = document.createElement('div');
+    sec.className = 'review-section';
+    const h = document.createElement('div');
+    h.className = 'review-heading';
+    h.textContent = heading + (entries.length ? ` (${entries.length})` : '');
+    sec.appendChild(h);
+
+    if (entries.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'review-empty';
+      empty.textContent = 'Nothing here.';
+      sec.appendChild(empty);
+      return sec;
+    }
+
+    const byTrack = {};
+    entries.forEach(e => {
+      const key = e.track.title;
+      if (!byTrack[key]) byTrack[key] = [];
+      byTrack[key].push(e);
+    });
+
+    Object.entries(byTrack).forEach(([trackTitle, items]) => {
+      const groupTitle = document.createElement('div');
+      groupTitle.className = 'review-group-title';
+      groupTitle.textContent = trackTitle;
+      sec.appendChild(groupTitle);
+      items.forEach(({ item, section }) => {
+        const row = document.createElement('div');
+        row.className = 'review-item' + (item.done ? ' done-item' : '') + (item.priority && !item.done ? ' priority-item' : '');
+        const label = document.createElement('span');
+        label.className = 'review-track-label';
+        label.textContent = section.name;
+        const text = document.createElement('span');
+        text.textContent = (item.priority && !item.done ? '★ ' : '') + item.text;
+        row.appendChild(label);
+        row.appendChild(text);
+        sec.appendChild(row);
+      });
+    });
+    return sec;
+  };
+
+  container.appendChild(makeSection('Active - Now & Soon', activeItems));
+  container.appendChild(makeSection('Sleeping - Someday', sleepingItems));
+  container.appendChild(makeSection('Completed', completedItems));
+}
+
+function showImportModal() {
+  const overlay = document.getElementById('import-overlay');
+  overlay.classList.add('show');
+  const ta = document.getElementById('import-textarea');
+  if (ta) { ta.value = ''; setTimeout(() => ta.focus(), 50); }
+  const res = document.getElementById('import-result');
+  if (res) { res.textContent = ''; res.className = 'import-result'; }
+}
+
+function hideImportModal() {
+  document.getElementById('import-overlay').classList.remove('show');
+}
+
+function runImport() {
+  const ta = document.getElementById('import-textarea');
+  const res = document.getElementById('import-result');
+  if (!ta || !ta.value.trim()) {
+    if (res) { res.textContent = 'Nothing to import - paste a list first.'; res.className = 'import-result'; }
+    return;
+  }
+  const count = importFromText(ta.value);
+  if (count === 0) {
+    if (res) { res.textContent = 'No valid items found. Use the format: track: item text'; res.className = 'import-result'; }
+    return;
+  }
+  saveData();
+  render();
+  hideImportModal();
+}
+
+// ============================================================
+// PWA SETUP
+// ============================================================
+function setupPWA() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 180;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#f0e9d8';
+  if (ctx.roundRect) {
+    ctx.beginPath(); ctx.roundRect(0, 0, 180, 180, 32); ctx.fill();
+  } else {
+    ctx.fillRect(0, 0, 180, 180);
+  }
+  ctx.fillStyle = '#5a4a2f';
+  ctx.font = '500 96px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('L', 90, 96);
+  const iconUrl = canvas.toDataURL('image/png');
+
+  const touchIcon = document.createElement('link');
+  touchIcon.rel = 'apple-touch-icon';
+  touchIcon.href = iconUrl;
+  document.head.appendChild(touchIcon);
+
+  const manifest = {
+    name: 'LocalPlan',
+    short_name: 'LocalPlan',
+    description: 'A single-file personal planner. Your data stays on your device.',
+    start_url: './',
+    display: 'standalone',
+    background_color: '#fafaf7',
+    theme_color: '#fafaf7',
+    icons: [{ src: iconUrl, sizes: '180x180', type: 'image/png' }]
+  };
+  const mBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  const mLink = document.createElement('link');
+  mLink.rel = 'manifest';
+  mLink.href = URL.createObjectURL(mBlob);
+  document.head.appendChild(mLink);
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    const sw = `const C='lp-v1';self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));`;
+    try {
+      navigator.serviceWorker.register(
+        URL.createObjectURL(new Blob([sw], { type: 'text/javascript' }))
+      ).catch(() => {});
+    } catch (_) {}
+  }
+}
+
+// ============================================================
+// THEME
+// ============================================================
+const THEME_KEY = 'localplan_theme';
+
+function applyTheme() {
+  const stored = storageGet(THEME_KEY);
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = stored === 'dark' || (stored === null && prefersDark);
+  document.body.classList.toggle('dark', isDark);
+  document.body.classList.toggle('light', !isDark);
+  const btn = document.getElementById('theme-btn');
+  if (btn) btn.textContent = isDark ? '☀' : '☾';
+  const bd = document.getElementById('braindump-theme-btn');
+  if (bd) bd.textContent = isDark ? '☀' : '☾';
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = isDark ? '#1a1a17' : '#fafaf7';
+}
+
+function toggleTheme() {
+  const isDark = document.body.classList.contains('dark');
+  storageSet(THEME_KEY, isDark ? 'light' : 'dark');
+  applyTheme();
+}
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (!storageGet(THEME_KEY)) applyTheme();
+});
+
+// ============================================================
+// WELCOME
+// ============================================================
+function showWelcome() {
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('welcome-overlay').classList.add('show');
+}
+
+function hideWelcome() {
+  document.getElementById('app').style.display = '';
+  document.getElementById('welcome-overlay').classList.remove('show');
+}
+
+function applyStarterPack(packId) {
+  const pack = STARTER_PACKS[packId];
+  if (!pack) return;
+  data = JSON.parse(JSON.stringify(pack));
+  saveData();
+  hideWelcome();
+  render();
+}
+
+document.querySelectorAll('.welcome-option').forEach(btn => {
+  btn.addEventListener('click', () => applyStarterPack(btn.dataset.pack));
+});
+
+// Search
+const searchInput = document.getElementById('search-input');
+const searchClear = document.getElementById('search-clear');
+if (searchInput) {
+  searchInput.addEventListener('input', () => {
+    searchQuery = searchInput.value;
+    searchClear.classList.toggle('show', searchQuery.length > 0);
+    render();
+  });
+}
+if (searchClear) {
+  searchClear.addEventListener('click', () => {
+    searchQuery = '';
+    searchInput.value = '';
+    searchClear.classList.remove('show');
+    searchInput.focus();
+    render();
+  });
+}
+
+// Import modal backdrop click
+document.getElementById('import-overlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) hideImportModal();
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); savePlan(); return; }
+  // Undo / redo. While a text field is focused, let the browser do native text undo.
+  const inField = e.target.closest && e.target.closest('input, textarea, [contenteditable]');
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') { if (inField) return; e.preventDefault(); undo(); return; }
+  if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { if (inField) return; e.preventDefault(); redo(); return; }
+  if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); setPlanZoom(planZoom + 0.1); return; }
+  if (mod && e.key === '-') { e.preventDefault(); setPlanZoom(planZoom - 0.1); return; }
+  if (mod && e.key === '0') { e.preventDefault(); setPlanZoom(1); return; }
+  if (e.key === '/' && !e.target.closest('input, textarea, [contenteditable]')) {
+    e.preventDefault();
+    if (searchInput) searchInput.focus();
+  }
+  if (e.key === 'Escape') {
+    if (document.getElementById('import-overlay').classList.contains('show')) {
+      hideImportModal();
+    } else if (searchQuery) {
+      searchQuery = '';
+      searchInput.value = '';
+      searchClear.classList.remove('show');
+      render();
+    }
+  }
+});
+
+document.querySelectorAll('#horizon-nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#horizon-nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentHorizon = btn.dataset.horizon;
+    render();
+  });
+});
+
+document.getElementById('plan-title').addEventListener('click', (e) => {
+  e.stopPropagation();
+  makeEditable(e.target, (v) => { data.planTitle = v; saveData(); render(); });
+});
+document.getElementById('plan-subtitle').addEventListener('click', (e) => {
+  e.stopPropagation();
+  makeEditable(e.target, (v) => { data.planSubtitle = v; saveData(); render(); }, { allowEmpty: true });
+});
+
+// ============================================================
+// INIT
+// ============================================================
+// ── embed: opened inside the LocalOffice Hub (postMessage handoff) ────
+function applyOpenedPlan(env, h) {
+  if (env.type !== 'plan') throw new Error('Not a plan file ("' + env.type + '")');
+  if (!env.body || !Array.isArray(env.body.tracks)) throw new Error('Invalid plan body');
+  data = coercePlanBody(env.body);
+  if (!data.planTitle && env.meta && env.meta.title) data.planTitle = env.meta.title;
+  resetHistory();   // a freshly opened file starts its own undo history
+  fileHandle = h || null; hideBraindump(); hideWelcome(); render(); saveData();   // render BEFORE save so a render failure never persists a corrupt body over a good one
+}
+window.addEventListener('message', async (e) => {
+  const m = e.data; if (!m || m.proto !== 'localoffice') return;
+  if (m.type === 'open-handle') { if (m.handle) fileHandle = m.handle; return; } // best-effort: enables in-place save when same-origin/hosted
+  if (m.type !== 'open') return;
+  try {
+    let t = m.text, h = m.handle || null;
+    if (h && t == null) t = await (await h.getFile()).text();
+    const env = LocalOffice.parse(t, { coerce: raw => (raw && Array.isArray(raw.tracks)) ? LocalOffice.createEnvelope('plan', { title: raw.planTitle || 'My Plan', app: 'localplan@1.0', body: raw }) : null }).envelope;
+    applyOpenedPlan(env, h);
+    (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: true }, '*');
+  } catch (err) { (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: false, error: String(err && err.message || err) }, '*'); }
+});
+
+(async function init() {
+  applyTheme();
+  // In the Hub the file is the source of truth and the localStorage autosave is OFF,
+  // so the footer must not claim it saves automatically there.
+  if (window.parent && window.parent !== window) {
+    const sn = document.getElementById('save-note');
+    if (sn) sn.innerHTML = 'In the LocalOffice Hub - the file is the source of truth · save with <b>Ctrl+S</b>';
+  }
+  const z = parseFloat(storageGet('localplan_zoom')); if (!isNaN(z)) planZoom = z; applyPlanZoom();
+  setupPWA();
+  data = await loadData();
+  if (!data) {
+    showBraindump();
+  } else {
+    hideWelcome();
+    processRecurring();
+    if (storageGet(NOTICE_KEY)) {
+      const el = document.getElementById('storage-notice');
+      if (el) el.style.display = 'none';
+    }
+    render();
+  }
+  if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'LocalPlan' }, '*');
+})();
+
+// ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
+const JsonPanel = (function () {
+  'use strict';
+  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  function build() {
+    const s = document.createElement('style');
+    s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
+    document.head.appendChild(s);
+    host = document.createElement('div'); host.id = 'jp';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    document.body.appendChild(host);
+    ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
+    const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
+    on('x', hide);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
+    on('apply', apply);
+    host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
+    document.addEventListener('keydown', e => { if (host.classList.contains('on') && e.key === 'Escape') hide(); });
+  }
+  function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
+  function hide() { host.classList.remove('on'); }
+  function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
+  async function apply() {
+    try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
+    catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
+  }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function init(h) {
+    hooks = h; if (!host) build();
+    const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
+    const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
+    if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
+    else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
+    btn.addEventListener('click', open);
+  }
+  return { init, open };
+})();
+JsonPanel.init({ getText: () => LocalOffice.stringify(planEnvelope()), applyText: (t) => applyOpenedPlan(LocalOffice.parse(t, { coerce: raw => (raw && Array.isArray(raw.tracks)) ? LocalOffice.createEnvelope('plan', { title: raw.planTitle || 'My Plan', app: 'localplan@1.0', body: raw }) : null }).envelope, fileHandle) });
+</script>
+</body>
+</html>

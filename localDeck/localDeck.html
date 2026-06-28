@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<!-- ════════════════════════════════════════════════════════════════════
+     localDeck - a LocalOffice tool (body type: slides)
+     Structured slide authoring: type content, pick a layout, reorder slides.
+     NOT a freeform drag-and-drop canvas. "Easier" is the goal.
+
+     Single file · no dependencies · no build step · fully offline.
+     Reads/writes localoffice/v1. Exports to single-file HTML and PDF, and
+     NEVER stamps identifying metadata (author/user/machine) into exports.
+
+     Pictures: imported images are re-encoded through a <canvas>, which strips
+     ALL source metadata (EXIF/GPS/camera/author) and downscales them - so
+     "anonymous-clean export" holds even when a slide has a photo on it.
+     Speaker notes live in the file and presenter view, never in HTML export.
+     MIT.
+     ════════════════════════════════════════════════════════════════════ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>localDeck</title>
+<style>
+  :root {
+    --bg:#1a1c20; --panel:#23262c; --panel2:#2b2f37; --line:#3a3f49;
+    --fg:#e7e9ee; --muted:#9aa1ad; --accent:#3b6ef6; --danger:#cd2b31;
+    --stage:#15161a;
+    /* aliases so the shared JSON inspector (which uses the Hub's variable names)
+       themes correctly here - without these, --ink fell back to near-black and the
+       JSON was invisible on the dark background. Resolved at use-time, so they track
+       both themes. */
+    --surface:var(--panel); --ink:var(--fg); --ink-2:var(--muted); --border:var(--line); --border-strong:var(--line);
+    color-scheme: dark;
+  }
+  /* app light theme - editor chrome only; the deck's own theme is separate */
+  body.light {
+    --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#d4d8df;
+    --fg:#1a1c20; --muted:#5c636e; --accent:#3b6ef6; --danger:#cd2b31;
+    --stage:#dfe2e7;
+    --surface:var(--panel); --ink:var(--fg); --ink-2:var(--muted); --border:var(--line); --border-strong:var(--line);
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background: var(--bg); color: var(--fg); display: flex; flex-direction: column; }
+
+  /* ── top bar ─────────────────────────────────────────── */
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+           background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header .brand { font-weight: 700; letter-spacing: .2px; margin-right: 6px; }
+  header .brand b { color: var(--accent); }
+  header input.title { background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+           border-radius: 6px; padding: 5px 9px; font: inherit; min-width: 160px; }
+  header .spacer { flex: 1; }
+  button { font: inherit; padding: 6px 11px; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--panel2); color: var(--fg); cursor: pointer; }
+  button:hover { border-color: #586172; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.ghost { background: transparent; }
+  button.danger:hover { border-color: var(--danger); color: #ff8a8e; }
+  select, input[type=color], input[type=text] { font: inherit; background: var(--panel2); color: var(--fg);
+           border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; }
+  .status { color: var(--muted); font-size: 12px; }
+
+  /* ── 3-pane body ─────────────────────────────────────── */
+  main { flex: 1; display: grid; grid-template-columns: 210px 1fr 310px; min-height: 0; }
+  .pane { overflow: auto; min-height: 0; }
+  #slidebar { background: var(--panel); border-right: 1px solid var(--line); padding: 10px; }
+  #stage { display: flex; flex-direction: column; padding: 0; background: var(--stage); min-height: 0; }
+  #stage-scroll { flex: 1; min-height: 0; overflow: auto; display: flex;
+                  align-items: safe center; justify-content: safe center; padding: 24px; container-type: size; }
+  #inspector { background: var(--panel); border-left: 1px solid var(--line); padding: 12px 14px; }
+
+  /* slide list */
+  .slide-card { position: relative; border: 1px solid var(--line); border-radius: 8px;
+                background: var(--panel2); margin-bottom: 8px; cursor: pointer; overflow: hidden; }
+  .slide-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .slide-card .num { position: absolute; top: 4px; left: 6px; font-size: 11px; color: var(--muted); z-index: 2;
+                     text-shadow: 0 1px 2px #000a; }
+  /* container-type scopes the slides' cqw font units to the thumbnail box,
+     so mini-slides scale down instead of resolving against the viewport */
+  .thumb { width: 100%; aspect-ratio: 16/9; container-type: size; }
+  .slide-card .ops { display: flex; gap: 2px; padding: 4px; border-top: 1px solid var(--line); }
+  .slide-card .ops button { padding: 2px 6px; font-size: 12px; flex: 1; }
+  #addslide { width: 100%; }
+
+  /* stage preview - fit by BOTH width and stage height, then scaled by --zoom */
+  .slide-frame { width: calc(var(--zoom, 1) * min(100%, 820px, calc(80cqh * 16 / 9)));
+                 margin: auto; flex: 0 0 auto; }
+  .slide {
+    position: relative; width: 100%; aspect-ratio: 16/9; border-radius: 6px; overflow: hidden;
+    box-shadow: 0 8px 30px #0008; container-type: size;
+  }
+  .block { position: absolute; overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+  .block ul { margin: 0; padding-left: 1.1em; }
+  .block li { margin: .15em 0; }
+  /* type scale uses cqw so text scales with slide width (editor & export match) */
+  .t-title   { font-weight: 800; font-size: 7.5cqw; line-height: 1.05; }
+  .t-sub     { font-weight: 400; font-size: 3.4cqw; opacity: .8; }
+  .t-head    { font-weight: 700; font-size: 4.6cqw; }
+  .t-body    { font-size: 3.1cqw; }
+  .t-section { font-weight: 800; font-size: 6.5cqw; line-height: 1.1; }
+  .t-quote   { font-weight: 600; font-size: 4.6cqw; font-style: italic; line-height: 1.25; }
+  .t-attr    { font-size: 2.8cqw; opacity: .75; }
+  .t-free    { font-size: 3.2cqw; }
+  /* image + code blocks */
+  .bimg { width: 100%; height: 100%; display: block; }
+  .imgph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+           border: .25cqw dashed currentColor; opacity: .35; font-size: 2.6cqw; }
+  .t-code { font-family: ui-monospace, 'Cascadia Code', 'Courier New', monospace; text-align: left;
+            background: #00000026; border-radius: .8cqw; }
+  .cs-s { font-size: 2.0cqw; } .cs-m { font-size: 2.6cqw; } .cs-l { font-size: 3.4cqw; }
+  .cwrap { padding: 1cqw 1.3cqw; }
+  .cl { display: flex; white-space: pre; line-height: 1.4; }
+  .cg { opacity: .4; min-width: 2.4em; text-align: right; padding-right: 1em; user-select: none; }
+  .cc { white-space: pre; }
+  .clang { position: absolute; top: .6cqw; right: 1.1cqw; font-size: 1.9cqw; opacity: .5;
+           font-family: ui-monospace, monospace; }
+  .footer { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between;
+            padding: .7cqw 2.2cqw; font-size: 2.1cqw; opacity: .55; }
+  .t-table { font-size: 2.8cqw; }
+  .dt { border-collapse: collapse; width: 100%; }
+  .dt th, .dt td { border: .14cqw solid currentColor; padding: .5cqw .9cqw; text-align: left; vertical-align: top; }
+  .dt th { font-weight: 700; background: #80808026; }
+  .stage-controls { display: flex; gap: 8px; align-items: center; justify-content: center;
+                    padding: 8px; border-top: 1px solid var(--line); }
+
+  /* inspector */
+  .insp-section { margin-bottom: 18px; }
+  .insp-section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px;
+                     color: var(--muted); margin: 0 0 8px; }
+  .field { margin-bottom: 10px; }
+  .field > label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .field input[type=text], .field textarea, .field select {
+    width: 100%; background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+    border-radius: 6px; padding: 7px 8px; font: inherit; }
+  .field textarea { resize: vertical; min-height: 72px; }
+  .field textarea.mono { font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 12px; min-height: 120px; white-space: pre; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .row2 { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+  .row2 select, .row2 input[type=text] { width: auto; flex: 1; }
+  .row2 label { font-size: 12px; color: var(--muted); display: flex; gap: 4px; align-items: center; white-space: nowrap; }
+  .imgthumb { height: 96px; background: #0004; border-radius: 6px; display: flex; align-items: center;
+              justify-content: center; overflow: hidden; margin: 6px 0; color: var(--muted); font-size: 12px; }
+  .imgthumb img { max-width: 100%; max-height: 100%; }
+  .theme-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .theme-row label { flex: 1; color: var(--muted); font-size: 12px; }
+
+  /* present overlay - two modes: plain, and presenter view with side notes */
+  #present { position: fixed; inset: 0; background: #000; z-index: 100; display: none; }
+  #present.on { display: flex; align-items: stretch; }
+  #present .pstage { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; justify-content: center; padding: 2vmin; }
+  /* size from the viewport, not the parent, so the slide can't collapse to 0 */
+  #present .slide { width: min(94vw, calc(92vh * 16 / 9)); box-shadow: none; border-radius: 0; }
+  #present.with-notes .slide { width: min(calc(94vw - 360px), calc(92vh * 16 / 9)); }
+  #present-aside { flex: 0 0 340px; height: 100%; background: #0d0d0f; color: #d7dbe2;
+                   border-left: 1px solid #333; padding: 18px 18px 48px; overflow: auto;
+                   display: none; flex-direction: column; gap: 12px; }
+  #present.with-notes #present-aside { display: flex; }
+  .pa-head { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: #8a93a3;
+             display: flex; justify-content: space-between; }
+  #present-notes { font-size: 18px; line-height: 1.5; white-space: pre-wrap; flex: 1; }
+  .pa-next { font-size: 13px; color: #8a93a3; border-top: 1px solid #333; padding-top: 10px; }
+  #present .exit { position: fixed; top: 12px; right: 16px; z-index: 2; }
+  .kbd { font-size: 11px; color: #aaa6; position: fixed; bottom: 6px; left: 0; right: 0; text-align: center; }
+
+  /* ── optional local-AI drawer ─────────────────────────── */
+  .hidden { display: none !important; }
+  #ai-panel { position: fixed; top: 0; right: 0; width: 360px; max-width: 92vw; height: 100%;
+              background: var(--panel); border-left: 1px solid var(--line); z-index: 90;
+              display: flex; flex-direction: column; box-shadow: -8px 0 30px #0006; }
+  .ai-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .ai-head strong { flex: 0 0 auto; } .ai-head .status { flex: 1; min-width: 0; }
+  .ai-body { padding: 12px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+  .ai-body > label { font-size: 12px; color: var(--muted); }
+  .ai-body select, .ai-body textarea { width: 100%; background: var(--panel2); border: 1px solid var(--line);
+              color: var(--fg); border-radius: 6px; padding: 7px 8px; font: inherit; }
+  #ai-prompt { min-height: 90px; resize: vertical; }
+  .ai-modes { display: flex; gap: 14px; }
+  .ai-modes label, .ai-ctx { color: var(--fg); display: flex; gap: 5px; align-items: center; font-size: 13px; }
+  .ai-actions { display: flex; gap: 8px; }
+  #ai-response { background: #0d0f13; border: 1px solid var(--line); border-radius: 6px; padding: 8px;
+                 white-space: pre-wrap; max-height: 220px; overflow: auto; font-size: 13px; }
+  .ai-apply { display: flex; flex-direction: column; gap: 6px; }
+  #ai-status.err { color: #ff8a8e; }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">local<b>Deck</b></span>
+  <input class="title" id="deck-title" placeholder="Untitled deck" aria-label="Deck title">
+  <button id="btn-new" class="ghost">New</button>
+  <select id="tpl" title="Start from a template">
+    <option value="">Template…</option>
+    <option value="design">Engineering design review</option>
+    <option value="rca">Incident postmortem (RCA)</option>
+    <option value="demo">Sprint demo / status</option>
+    <option value="field">Research / field report</option>
+  </select>
+  <button id="btn-open" class="ghost">Open</button>
+  <button id="btn-save" class="primary">Save</button>
+  <button id="btn-saveas" class="ghost">Save As</button>
+  <button id="btn-undo" class="ghost" title="Undo (Ctrl+Z)">↶</button>
+  <button id="btn-redo" class="ghost" title="Redo (Ctrl+Y)">↷</button>
+  <span class="spacer"></span>
+  <button id="btn-present" class="ghost">▶ Present</button>
+  <button id="btn-present-notes" class="ghost" title="Presenter view with speaker notes">▶ + Notes</button>
+  <button id="btn-export-html" class="ghost">Export HTML</button>
+  <button id="btn-export-pdf" class="ghost">Export PDF</button>
+  <button id="btn-ai" class="ghost" title="Local AI - optional, needs Ollama">✦ AI</button>
+  <button id="btn-theme" class="ghost" title="Light / dark">☾</button>
+  <span class="status" id="status">-</span>
+</header>
+
+<main>
+  <div id="slidebar" class="pane">
+    <div id="slide-list"></div>
+    <button id="addslide">＋ Add slide</button>
+  </div>
+
+  <div id="stage" class="pane">
+    <div id="stage-scroll"><div class="slide-frame"><div id="preview" class="slide"></div></div></div>
+    <div class="stage-controls">
+      <button id="prev" class="ghost">←</button>
+      <span class="status" id="counter">0 / 0</span>
+      <button id="next" class="ghost">→</button>
+      <span class="status" style="opacity:.35">│</span>
+      <button id="zoom-out" class="ghost" title="Zoom out (Ctrl -)">−</button>
+      <span class="status" id="zoom-label" style="min-width:44px;text-align:center">100%</span>
+      <button id="zoom-in" class="ghost" title="Zoom in (Ctrl +)">+</button>
+      <button id="zoom-fit" class="ghost" title="Fit (Ctrl 0)">Fit</button>
+    </div>
+  </div>
+
+  <div id="inspector" class="pane"></div>
+</main>
+
+<div id="ai-panel" class="hidden">
+  <div class="ai-head">
+    <strong>✦ Local AI</strong>
+    <span class="status" id="ai-status">…</span>
+    <button id="ai-close" class="ghost">✕</button>
+  </div>
+  <div class="ai-body">
+    <label>Model <select id="ai-model"><option value="">(detecting Ollama…)</option></select></label>
+    <div class="ai-modes">
+      <label><input type="radio" name="ai-mode" value="assist" checked> Assist</label>
+      <label><input type="radio" name="ai-mode" value="slide"> Draft slide</label>
+    </div>
+    <label class="ai-ctx"><input type="checkbox" id="ai-include" checked> Include current slide as context</label>
+    <textarea id="ai-prompt" placeholder="e.g. Draft 4 concise bullets on rollout risks…  (Ctrl+Enter to send)"></textarea>
+    <div class="ai-actions">
+      <button id="ai-send" class="primary">Send</button>
+      <button id="ai-stop" class="ghost hidden">Stop</button>
+    </div>
+    <pre id="ai-response" class="hidden"></pre>
+    <div class="ai-apply">
+      <button id="ai-insert-field" class="ghost hidden">Insert into focused field</button>
+      <button id="ai-insert-notes" class="ghost hidden">Add to speaker notes</button>
+      <button id="ai-apply-slide" class="ghost hidden">Apply to slide</button>
+    </div>
+    <div class="hint">Optional. Talks only to your local Ollama at <code>localhost:11434</code> - nothing leaves
+      your machine, and AI never changes anything on its own (it proposes; you apply). Setup: OLLAMA_SETUP.md.</div>
+  </div>
+</div>
+
+<div id="present">
+  <div class="pstage"><div id="present-slide" class="slide"></div></div>
+  <aside id="present-aside">
+    <div class="pa-head"><span>Speaker notes</span><span id="pa-counter"></span></div>
+    <div id="present-notes"></div>
+    <div class="pa-next" id="pa-next"></div>
+  </aside>
+  <button class="exit" id="present-exit">Exit (Esc)</button>
+  <div class="kbd">← →  navigate  ·  N  notes  ·  Esc  exit</div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   SHARED CORE - vendored verbatim from src/core.js (keep in sync).
+   Single-file rule means each tool inlines the shared loader/saver.
+   ════════════════════════════════════════════════════════════════════ */
+'use strict';
+const LocalOffice = (function () {
+  const FORMAT = 'localoffice/v1';
+  const FORMAT_PREFIX = 'localoffice/';
+  const FILE_EXT = '.localoffice.json';
+  const TYPES = ['sheet', 'plan', 'flashcards', 'mindmap', 'slides'];
+
+  function nowISO() { return new Date().toISOString(); }
+  function uuid() {
+    const c = (typeof crypto !== 'undefined') ? crypto : null;
+    if (c && typeof c.randomUUID === 'function') { try { return c.randomUUID(); } catch (_) {} }
+    let rnd;
+    if (c && typeof c.getRandomValues === 'function') {
+      const b = new Uint8Array(16); c.getRandomValues(b);
+      b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80; rnd = (i) => b[i];
+    } else {
+      const a = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
+      a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80; rnd = (i) => a[i];
+    }
+    const h = []; for (let i = 0; i < 16; i++) h.push((rnd(i) + 0x100).toString(16).slice(1));
+    return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+  }
+  function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+
+  function freshBody(type) {
+    switch (type) {
+      case 'sheet':      return { sheets: [] };
+      case 'plan':       return { tasks: [] };
+      case 'flashcards': return { deck: { name: '' }, scheduler: 'fsrs-lite', cards: [] };
+      case 'mindmap':    return { nodes: [], edges: [] };
+      case 'slides':     return { theme: {}, slides: [] };
+      default:           return {};
+    }
+  }
+  function createEnvelope(type, opts = {}) {
+    if (!TYPES.includes(type)) throw new Error(`createEnvelope: unknown type "${type}"`);
+    const ts = nowISO();
+    return {
+      format: FORMAT, type,
+      meta: {
+        id: opts.id || uuid(), title: opts.title || '', created: ts, modified: ts,
+        app: opts.app || '', tags: Array.isArray(opts.tags) ? opts.tags.slice() : []
+      },
+      body: isPlainObject(opts.body) ? opts.body : freshBody(type)
+    };
+  }
+  function validate(obj) {
+    const errors = [], warnings = [];
+    if (!isPlainObject(obj)) return { ok: false, errors: ['Not a JSON object.'], warnings, type: null, formatVersion: null };
+    let formatVersion = null;
+    if (typeof obj.format !== 'string') errors.push('Missing "format" field.');
+    else if (!obj.format.startsWith(FORMAT_PREFIX)) errors.push(`Unrecognized format "${obj.format}".`);
+    else { formatVersion = obj.format.slice(FORMAT_PREFIX.length);
+           if (obj.format !== FORMAT) warnings.push(`Format "${obj.format}" differs from "${FORMAT}".`); }
+    if (typeof obj.type !== 'string' || !obj.type) errors.push('Missing "type" field.');
+    else if (!TYPES.includes(obj.type)) warnings.push(`Unknown type "${obj.type}".`);
+    if (!isPlainObject(obj.meta)) errors.push('Missing or invalid "meta" object.');
+    if (!isPlainObject(obj.body)) warnings.push('Missing or invalid "body"; treated as empty.');
+    return { ok: errors.length === 0, errors, warnings, type: typeof obj.type === 'string' ? obj.type : null, formatVersion };
+  }
+  function normalize(obj) {
+    if (!isPlainObject(obj.meta)) obj.meta = {};
+    const m = obj.meta;
+    if (typeof m.id !== 'string' || !m.id) m.id = uuid();
+    if (typeof m.title !== 'string') m.title = '';
+    if (typeof m.created !== 'string') m.created = nowISO();
+    if (typeof m.modified !== 'string') m.modified = m.created;
+    if (typeof m.app !== 'string') m.app = '';
+    if (!Array.isArray(m.tags)) m.tags = [];
+    if (!isPlainObject(obj.body)) obj.body = freshBody(obj.type);
+    return obj;
+  }
+  class LoadError extends Error { constructor(m, d) { super(m); this.name = 'LoadError'; this.detail = d; } }
+  function parse(text, opts = {}) {
+    let raw; try { raw = JSON.parse(text); } catch (e) { throw new LoadError('File is not valid JSON.', e.message); }
+    let result = validate(raw), obj = raw;
+    if (!result.ok && typeof opts.coerce === 'function') {
+      const c = opts.coerce(raw); if (isPlainObject(c)) { obj = c; result = validate(obj); }
+    }
+    if (!result.ok) throw new LoadError('Not a LocalOffice file: ' + result.errors.join(' '), result.errors);
+    normalize(obj); return { envelope: obj, warnings: result.warnings };
+  }
+  function stringify(env, pretty = true) { return JSON.stringify(env, null, pretty ? 2 : 0); }
+  function serialize(env, opts = {}) {
+    if (!isPlainObject(env)) throw new Error('serialize: not an object');
+    const r = validate(env); if (!r.ok) throw new Error('serialize: invalid envelope - ' + r.errors.join(' '));
+    if (opts.touch !== false) { if (!isPlainObject(env.meta)) env.meta = {}; env.meta.modified = nowISO(); }
+    return stringify(env, opts.pretty !== false);
+  }
+  function dispatch(env, handlers = {}) {
+    const t = env && env.type, fn = (t && handlers[t]) || handlers.default;
+    if (typeof fn !== 'function') throw new Error(`dispatch: no handler for type "${t}".`);
+    return fn(env);
+  }
+  function slugify(s) {
+    return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  }
+  function suggestedName(env) {
+    return (slugify(env && env.meta && env.meta.title) || (env && env.type) || 'untitled') + FILE_EXT;
+  }
+  function supportsFS() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; }
+  // File System Access API rejects accept-extensions >16 chars, so list '.json'
+  // (not '.localoffice.json' = 17). Compound name still used in suggestedName.
+  const PICKER_TYPES = [{ description: 'LocalOffice file', accept: { 'application/json': ['.json'] } }];
+  function isEmbedded() { return typeof window !== 'undefined' && window.parent && window.parent !== window; }
+  // Embedded in the Hub: file pickers are blocked in a cross-origin subframe, so
+  // delegate the write to the Hub (top frame), which holds the directory handle
+  // and saves in place - even over file://.
+  function hubSave(text, name, asNew) {
+    return new Promise((resolve, reject) => {
+      const id = 'lo' + Math.random().toString(36).slice(2);
+      function on(e) { const m = e.data; if (!m || m.proto !== 'localoffice' || m.type !== 'saved' || m.id !== id) return; window.removeEventListener('message', on); if (m.ok) resolve({ handle: null, name: m.name || name }); else if (m.error === 'cancelled') { const a = new Error('cancelled'); a.name = 'AbortError'; reject(a); } else reject(new Error(m.error || 'Save failed')); }
+      window.addEventListener('message', on);
+      window.parent.postMessage({ proto: 'localoffice', type: 'save', id, text, name, asNew: !!asNew }, '*');
+    });
+  }
+  async function openFile(opts = {}) {
+    if (supportsFS()) {
+      try {
+        const [handle] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false });
+        const file = await handle.getFile(); const { envelope, warnings } = parse(await file.text(), opts);
+        return { envelope, handle, name: file.name, warnings };
+      } catch (e) { if (e && e.name === 'AbortError') throw e; /* picker blocked (cross-origin iframe) → upload fallback */ }
+    }
+    const file = await pickFileFallback(); const { envelope, warnings } = parse(await file.text(), opts);
+    return { envelope, handle: null, name: file.name, warnings };
+  }
+  function pickFileFallback() {
+    return new Promise((resolve, reject) => {
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = '.json,application/json'; input.style.display = 'none';
+      input.addEventListener('change', () => { const f = input.files && input.files[0]; input.remove(); f ? resolve(f) : reject(new Error('No file selected.')); });
+      document.body.appendChild(input); input.click();
+    });
+  }
+  async function saveFile(env, handle, opts = {}) {
+    const text = serialize(env, opts);
+    if (isEmbedded()) return hubSave(text, suggestedName(env), false);
+    if (handle && typeof handle.createWritable === 'function') {
+      const w = await handle.createWritable(); await w.write(text); await w.close();
+      return { handle, name: handle.name };
+    }
+    return saveFileAs(env, suggestedName(env), { ...opts, _text: text });
+  }
+  async function saveFileAs(env, suggested, opts = {}) {
+    const text = opts._text != null ? opts._text : serialize(env, opts);
+    const name = suggested || suggestedName(env);
+    if (isEmbedded()) return hubSave(text, name, true);
+    if (supportsFS()) {
+      const handle = await window.showSaveFilePicker({ suggestedName: name, types: PICKER_TYPES });
+      const w = await handle.createWritable(); await w.write(text); await w.close();
+      return { handle, name: handle.name };
+    }
+    download(text, name); return { handle: null, name };
+  }
+  function download(text, filename) {
+    const blob = new Blob([text], { type: 'application/json' }), url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename || ('untitled' + FILE_EXT);
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+  return { FORMAT, FILE_EXT, TYPES, uuid, nowISO, freshBody, createEnvelope, validate, normalize,
+           parse, stringify, serialize, dispatch, slugify, suggestedName, LoadError,
+           supportsFS, openFile, saveFile, saveFileAs, download };
+})();
+
+/* ════════════════════════════════════════════════════════════════════
+   localDeck APP
+   ════════════════════════════════════════════════════════════════════ */
+const APP_ID = 'localdeck@1.1';
+const MAX_IMG_DIM = 1600;   // longest side, px - bounds JSON size
+const IMG_QUALITY = 0.85;   // jpeg re-encode quality
+
+// Layouts: each defines the editable fields for a slide. Geometry is in
+// percent of the 16:9 slide box, so editor and export render identically.
+// field.type: text | para | bullets | image | code
+const LAYOUTS = {
+  title:   { name: 'Title', fields: [
+    { role: 'title',    type: 'text', label: 'Title',    ph: 'Presentation title', geom: [10, 33, 80, 22], cls: 't-title', align: 'center' },
+    { role: 'subtitle', type: 'text', label: 'Subtitle', ph: 'Subtitle or date',   geom: [10, 57, 80, 14], cls: 't-sub',   align: 'center' } ] },
+  bullets: { name: 'Title + Bullets', fields: [
+    { role: 'title', type: 'text',    label: 'Title',   ph: 'Slide title',  geom: [7, 8, 86, 15], cls: 't-head', align: 'left' },
+    { role: 'body',  type: 'bullets', label: 'Bullets', ph: 'One per line',  geom: [7, 27, 86, 65], cls: 't-body', align: 'left' } ] },
+  twocol:  { name: 'Two columns', fields: [
+    { role: 'title', type: 'text',    label: 'Title',        ph: 'Slide title',  geom: [7, 8, 86, 15], cls: 't-head', align: 'left' },
+    { role: 'left',  type: 'bullets', label: 'Left column',  ph: 'One per line',  geom: [7, 27, 42, 65], cls: 't-body', align: 'left' },
+    { role: 'right', type: 'bullets', label: 'Right column', ph: 'One per line',  geom: [51, 27, 42, 65], cls: 't-body', align: 'left' } ] },
+  section: { name: 'Section header', fields: [
+    { role: 'heading', type: 'text', label: 'Heading', ph: 'Section', geom: [8, 39, 84, 22], cls: 't-section', align: 'center' } ] },
+  quote:   { name: 'Quote', fields: [
+    { role: 'quote',       type: 'para', label: 'Quote',       ph: 'The quotation', geom: [12, 28, 76, 34], cls: 't-quote', align: 'center' },
+    { role: 'attribution', type: 'text', label: 'Attribution', ph: '- Source',      geom: [12, 64, 76, 12], cls: 't-attr',  align: 'center' } ] },
+  image:   { name: 'Image', fields: [
+    { role: 'image', type: 'image', label: 'Image', geom: [4, 4, 92, 92], cls: 't-img', align: 'center', defaults: { fit: 'cover' } } ] },
+  imagecaption: { name: 'Image + caption', fields: [
+    { role: 'image',   type: 'image', label: 'Image',   geom: [6, 5, 88, 76], cls: 't-img',  align: 'center', defaults: { fit: 'contain' } },
+    { role: 'caption', type: 'text',  label: 'Caption', ph: 'Caption', geom: [6, 83, 88, 12], cls: 't-attr', align: 'center' } ] },
+  textimage: { name: 'Text + image', fields: [
+    { role: 'title', type: 'text',    label: 'Title',   ph: 'Slide title', geom: [7, 8, 86, 14], cls: 't-head', align: 'left' },
+    { role: 'body',  type: 'bullets', label: 'Bullets', ph: 'One per line', geom: [7, 26, 44, 66], cls: 't-body', align: 'left' },
+    { role: 'image', type: 'image',   label: 'Image',   geom: [54, 26, 39, 66], cls: 't-img', align: 'center', defaults: { fit: 'cover' } } ] },
+  code:    { name: 'Code', fields: [
+    { role: 'title', type: 'text', label: 'Title', ph: 'Optional title', geom: [7, 7, 86, 12], cls: 't-head', align: 'left' },
+    { role: 'code',  type: 'code', label: 'Code',  ph: 'Paste code…',    geom: [7, 22, 86, 72], cls: 't-code', align: 'left',
+      defaults: { lang: '', lines: true, size: 'm' } } ] },
+  table:   { name: 'Table', fields: [
+    { role: 'title', type: 'text',  label: 'Title', ph: 'Optional title', geom: [7, 7, 86, 12], cls: 't-head', align: 'left' },
+    { role: 'table', type: 'table', label: 'Table', ph: 'Header 1 | Header 2\nRow 1a | Row 1b', geom: [7, 22, 86, 72], cls: 't-table', align: 'left' } ] },
+  blank:   { name: 'Blank', fields: [
+    { role: 'text', type: 'para', label: 'Text', ph: 'Anything', geom: [8, 8, 84, 84], cls: 't-free', align: 'left' } ] },
+};
+const LAYOUT_ORDER = ['title', 'bullets', 'twocol', 'section', 'quote', 'image', 'imagecaption', 'textimage', 'code', 'table', 'blank'];
+
+const FONTS = {
+  system: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+  serif:  "Georgia, 'Times New Roman', serif",
+  mono:   "ui-monospace, 'Cascadia Code', 'Courier New', monospace",
+};
+const THEME_PRESETS = {
+  midnight: { bg: '#16181d', fg: '#e7e9ee', accent: '#5b8cff', font: 'system' },
+  paper:    { bg: '#ffffff', fg: '#1a1c20', accent: '#3b6ef6', font: 'serif' },
+  slate:    { bg: '#0f172a', fg: '#e2e8f0', accent: '#38bdf8', font: 'system' },
+  warm:     { bg: '#faf6f0', fg: '#2a2420', accent: '#c2410c', font: 'serif' },
+};
+function defaultTheme() { return { ...THEME_PRESETS.midnight, preset: 'midnight' }; }
+function defaultFooter() { return { show: false, text: '', numbers: true }; }
+
+// ── state ────────────────────────────────────────────────────────────
+let deck = null;     // the live envelope
+let handle = null;   // FileSystemFileHandle when available
+let cur = 0;         // current slide index
+let dirty = false;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const kb = (dataURI) => { const i = dataURI.indexOf(','); return Math.round((dataURI.length - i - 1) * 0.75 / 1024); };
+
+function theme() { return Object.assign(defaultTheme(), deck.body.theme || {}); }
+function footer() { return Object.assign(defaultFooter(), deck.body.footer || {}); }
+function slides() { return deck.body.slides; }
+function slide() { return slides()[cur]; }
+
+function blankSlide(layout = 'bullets') { return { id: LocalOffice.uuid(), layout, blocks: [], notes: '' }; }
+
+// Ensure a slide's blocks match its layout's fields (preserving content by role).
+function syncBlocks(s) {
+  const fields = LAYOUTS[s.layout] ? LAYOUTS[s.layout].fields : LAYOUTS.blank.fields;
+  const byRole = {}; (s.blocks || []).forEach(b => { byRole[b.role] = b; });
+  s.blocks = fields.map(f => {
+    const prev = byRole[f.role] || {};
+    return {
+      type: f.type, role: f.role,
+      content: typeof prev.content === 'string' ? prev.content : '',
+      x: f.geom[0], y: f.geom[1], w: f.geom[2], h: f.geom[3],
+      // layout owns cls/align; user-settable bits (fit/lang/lines/size) persist via prev.style
+      style: Object.assign({}, f.defaults || {}, prev.style, { cls: f.cls, align: f.align })
+    };
+  });
+  if (typeof s.notes !== 'string') s.notes = '';
+  return s;
+}
+
+// ── undo / redo (snapshot stack, coalesced per editing session) ───────
+let undoStack = [], redoStack = [], lastUndoKey = null;
+const MAX_UNDO = 60;
+function snap() { return LocalOffice.stringify(deck, false); }
+function pushUndo() { undoStack.push(snap()); if (undoStack.length > MAX_UNDO) undoStack.shift(); redoStack.length = 0; lastUndoKey = null; refreshUndoButtons(); }
+function coalescedUndo(key) { if (lastUndoKey === key) return; undoStack.push(snap()); if (undoStack.length > MAX_UNDO) undoStack.shift(); redoStack.length = 0; lastUndoKey = key; refreshUndoButtons(); }
+function restore(s) { deck = JSON.parse(s); if (cur >= slides().length) cur = slides().length - 1; if (cur < 0) cur = 0; lastUndoKey = null; dirty = true; renderAll(); }
+function undo() { if (!undoStack.length) return; redoStack.push(snap()); restore(undoStack.pop()); setStatus('Undo'); }
+function redo() { if (!redoStack.length) return; undoStack.push(snap()); restore(redoStack.pop()); setStatus('Redo'); }
+function refreshUndoButtons() { $('btn-undo').disabled = !undoStack.length; $('btn-redo').disabled = !redoStack.length; }
+
+// ── deck lifecycle ────────────────────────────────────────────────────
+function freshDeckEnvelope(title, body) {
+  return LocalOffice.createEnvelope('slides', { title: title || '', app: APP_ID,
+    body: body || { theme: defaultTheme(), footer: defaultFooter(), slides: [] } });
+}
+function newDeck() {
+  deck = freshDeckEnvelope('');
+  deck.body.slides.push(syncBlocks(blankSlide('title')));
+  handle = null; cur = 0; dirty = false; undoStack = []; redoStack = []; lastUndoKey = null;
+  renderAll(); setStatus('New deck');
+}
+
+async function openDeck() {
+  try {
+    const res = await LocalOffice.openFile();
+    if (res.envelope.type !== 'slides') {
+      setStatus(`Opened a "${res.envelope.type}" file - localDeck only edits slides. Title: ${res.envelope.meta.title || '(untitled)'}`);
+      return;
+    }
+    deck = res.envelope;
+    if (!deck.body.theme) deck.body.theme = defaultTheme();
+    if (!deck.body.footer) deck.body.footer = defaultFooter();
+    if (!Array.isArray(deck.body.slides) || !deck.body.slides.length) deck.body.slides = [syncBlocks(blankSlide('title'))];
+    deck.body.slides.forEach(syncBlocks);
+    handle = res.handle; cur = 0; dirty = false; undoStack = []; redoStack = []; lastUndoKey = null;
+    renderAll();
+    setStatus(`Opened ${res.name}` + (res.warnings.length ? ` - ${res.warnings.join(' ')}` : ''));
+  } catch (e) { if (e && e.name !== 'AbortError') setStatus('Open failed: ' + e.message); }
+}
+
+async function saveDeck(asNew) {
+  try {
+    deck.meta.app = APP_ID;
+    const res = asNew
+      ? await LocalOffice.saveFileAs(deck, LocalOffice.suggestedName(deck))
+      : await LocalOffice.saveFile(deck, handle);
+    handle = res.handle; dirty = false;
+    setStatus(`Saved ${res.name}`);
+  } catch (e) { if (e && e.name !== 'AbortError') setStatus('Save failed: ' + e.message); }
+}
+
+function setStatus(msg) { $('status').textContent = msg; }
+function markDirty() { dirty = true; deck.meta.modified = LocalOffice.nowISO(); }
+
+// ── rendering ─────────────────────────────────────────────────────────
+function slideStyleVars(t) {
+  return `background:${esc(t.bg)};color:${esc(t.fg)};font-family:${t.font && FONTS[t.font] ? FONTS[t.font] : FONTS.system};`;
+}
+function codeHTML(b) {
+  const lines = String(b.content || '').replace(/\t/g, '  ').split('\n');
+  const showLn = !!(b.style && b.style.lines);
+  const lang = b.style && b.style.lang;
+  const body = lines.map((ln, i) =>
+    `<div class="cl">${showLn ? `<span class="cg">${i + 1}</span>` : ''}<span class="cc">${esc(ln) || ' '}</span></div>`).join('');
+  return `${lang ? `<span class="clang">${esc(lang)}</span>` : ''}<div class="cwrap">${body}</div>`;
+}
+function codeSizeCls(b) { return 'cs-' + ((b.style && b.style.size) || 'm'); }
+function tableHTML(b) {
+  // rows = lines, cells split on "|", first row is the header
+  const rows = String(b.content || '').split('\n').map(r => r.trim()).filter(Boolean)
+    .map(r => r.split('|').map(c => c.trim()));
+  if (!rows.length) return '';
+  const thead = `<tr>${rows[0].map(c => `<th>${esc(c)}</th>`).join('')}</tr>`;
+  const tbody = rows.slice(1).map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('');
+  return `<table class="dt"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+}
+
+function blockHTML(b, t, opts) {
+  const forExport = !!(opts && opts.export);
+  const pos = `left:${b.x}%;top:${b.y}%;width:${b.w}%;height:${b.h}%;`;
+  const align = (b.style && b.style.align) || 'left';
+  const cls = (b.style && b.style.cls) || 't-body';
+
+  if (b.type === 'image') {
+    let inner = '';
+    if (b.content) inner = `<img class="bimg" style="object-fit:${(b.style && b.style.fit) || 'cover'}" src="${b.content}" alt="">`;
+    else if (!forExport) inner = `<div class="imgph">Image - choose, drag, or paste</div>`;
+    return `<div class="block ${cls}" style="${pos}padding:0;">${inner}</div>`;
+  }
+  if (b.type === 'code') {
+    return `<div class="block t-code ${codeSizeCls(b)}" style="${pos}overflow:auto;">${codeHTML(b)}</div>`;
+  }
+  if (b.type === 'table') {
+    return `<div class="block ${cls}" style="${pos}overflow:auto;">${tableHTML(b)}</div>`;
+  }
+
+  const txtAlign = `text-align:${align};`;
+  const center = (cls === 't-title' || cls === 't-section' || cls === 't-quote');
+  const disp = `display:flex;flex-direction:column;justify-content:${center ? 'center' : 'flex-start'};`;
+  // Centered headings are vertically centered in a fixed-height box; if the text
+  // wraps to 2+ lines it's taller than the box and the default overflow:hidden
+  // clips it top & bottom. Let centered headings overflow their box (they stay
+  // centered, just not cropped). Applies to the editor AND the HTML export.
+  const clip = center ? 'overflow:visible;' : '';
+  let inner;
+  if (b.type === 'bullets') {
+    // strip any leading list marker the user/AI typed ("- ", "* ", "• ", "1. ")
+    // so <li> doesn't render a second bullet next to it
+    const items = String(b.content || '').split('\n')
+      .map(s => s.trim().replace(/^([-*•]|\d+[.)])\s+/, ''))
+      .filter(Boolean);
+    inner = items.length ? `<ul>${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '';
+  } else {
+    inner = esc(b.content); // text / para / any unknown type → safe text
+  }
+  return `<div class="block ${cls}" style="${pos}${txtAlign}${disp}${clip}padding:0 1.5cqw;">${inner}</div>`;
+}
+
+function slideInnerHTML(s, t, opts) {
+  let html = (s.blocks || []).map(b => blockHTML(b, t, opts)).join('');
+  if (opts && opts.chrome) {
+    const f = footer();
+    if (f.show) {
+      const left = esc(f.text || '');
+      const num = f.numbers ? `<span>${opts.index} / ${opts.total}</span>` : '<span></span>';
+      if (left || f.numbers) html += `<div class="footer"><span>${left}</span>${num}</div>`;
+    }
+  }
+  return html;
+}
+
+function renderPreview() {
+  const t = theme(), s = slide();
+  const p = $('preview');
+  p.setAttribute('style', slideStyleVars(t));
+  p.innerHTML = s ? slideInnerHTML(s, t, { chrome: true, index: cur + 1, total: slides().length }) : '';
+  $('counter').textContent = `${slides().length ? cur + 1 : 0} / ${slides().length}`;
+}
+
+function renderSlideList() {
+  const t = theme(), list = $('slide-list');
+  list.innerHTML = '';
+  slides().forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'slide-card' + (i === cur ? ' active' : '');
+    card.innerHTML =
+      `<span class="num">${i + 1}</span>` +
+      `<div class="thumb" style="${slideStyleVars(t)}position:relative;">${slideInnerHTML(s, t)}</div>` +
+      `<div class="ops">` +
+        `<button data-op="up"   title="Move up">↑</button>` +
+        `<button data-op="down" title="Move down">↓</button>` +
+        `<button data-op="dup"  title="Duplicate">⧉</button>` +
+        `<button data-op="del"  title="Delete" class="danger">✕</button>` +
+      `</div>`;
+    card.addEventListener('click', (e) => {
+      const op = e.target.getAttribute && e.target.getAttribute('data-op');
+      if (op) { e.stopPropagation(); slideOp(op, i); } else { cur = i; renderAll(); }
+    });
+    list.appendChild(card);
+  });
+}
+
+function renderInspector() {
+  const s = slide(), insp = $('inspector');
+  if (!s) { insp.innerHTML = '<p class="status">No slide.</p>'; return; }
+  const fields = (LAYOUTS[s.layout] || LAYOUTS.blank).fields;
+  const t = theme(), f = footer();
+
+  let html = `<div class="insp-section"><h3>Slide</h3>`;
+  html += `<div class="field"><label>Layout</label><select id="ins-layout">` +
+    LAYOUT_ORDER.map(k => `<option value="${k}"${k === s.layout ? ' selected' : ''}>${LAYOUTS[k].name}</option>`).join('') +
+    `</select></div>`;
+
+  fields.forEach(fd => {
+    const b = s.blocks.find(bb => bb.role === fd.role) || { content: '', style: {} };
+    const val = esc(b.content);
+    html += `<div class="field"><label>${fd.label}</label>`;
+    if (fd.type === 'text') {
+      html += `<input type="text" data-role="${fd.role}" placeholder="${fd.ph || ''}" value="${val}">`;
+    } else if (fd.type === 'para' || fd.type === 'bullets') {
+      html += `<textarea data-role="${fd.role}" placeholder="${fd.ph || ''}">${val}</textarea>`;
+      if (fd.type === 'bullets') html += `<div class="hint">One bullet per line.</div>`;
+    } else if (fd.type === 'image') {
+      const has = !!b.content, fit = (b.style && b.style.fit) || 'cover';
+      html += `<input type="file" id="img-file" accept="image/*">
+        <div class="imgthumb">${has ? `<img src="${b.content}">` : 'No image'}</div>
+        <div class="row2">
+          <label>Fit <select id="img-fit">
+            <option value="contain"${fit === 'contain' ? ' selected' : ''}>contain</option>
+            <option value="cover"${fit === 'cover' ? ' selected' : ''}>cover</option></select></label>
+          <button id="img-clear" class="ghost" ${has ? '' : 'disabled'}>Clear</button>
+        </div>
+        <div class="hint" id="img-size">${has ? kb(b.content) + ' KB · re-encoded, metadata stripped' : 'Choose, drag, or paste an image'}</div>`;
+    } else if (fd.type === 'code') {
+      const st = b.style || {}, size = st.size || 'm';
+      html += `<textarea class="mono" data-role="${fd.role}" placeholder="${fd.ph || ''}">${val}</textarea>
+        <div class="row2">
+          <input type="text" id="code-lang" placeholder="language" value="${esc(st.lang || '')}">
+          <label><input type="checkbox" id="code-lines" ${st.lines ? 'checked' : ''}> line #s</label>
+          <select id="code-size">
+            <option value="s"${size === 's' ? ' selected' : ''}>S</option>
+            <option value="m"${size === 'm' ? ' selected' : ''}>M</option>
+            <option value="l"${size === 'l' ? ' selected' : ''}>L</option></select>
+        </div>`;
+    } else if (fd.type === 'table') {
+      html += `<textarea class="mono" data-role="${fd.role}" placeholder="${fd.ph || ''}">${val}</textarea>
+        <div class="hint">Rows = lines · cells separated by " | " · first row is the header.</div>`;
+    }
+    html += `</div>`;
+  });
+
+  // speaker notes (always)
+  html += `<div class="field"><label>Speaker notes <span class="hint">- in file &amp; presenter view, not in HTML export</span></label>
+    <textarea id="ins-notes" placeholder="Talk track…">${esc(s.notes || '')}</textarea></div>`;
+  html += `</div>`;
+
+  // theme
+  html += `<div class="insp-section"><h3>Theme</h3>`;
+  html += `<div class="field"><label>Preset</label><select id="th-preset">` +
+    Object.keys(THEME_PRESETS).map(k => `<option value="${k}"${t.preset === k ? ' selected' : ''}>${k}</option>`).join('') +
+    `<option value="custom"${!THEME_PRESETS[t.preset] ? ' selected' : ''}>custom</option></select></div>`;
+  html += `<div class="theme-row"><label>Background</label><input type="color" id="th-bg" value="${esc(t.bg)}"></div>`;
+  html += `<div class="theme-row"><label>Text</label><input type="color" id="th-fg" value="${esc(t.fg)}"></div>`;
+  html += `<div class="theme-row"><label>Accent</label><input type="color" id="th-accent" value="${esc(t.accent)}"></div>`;
+  html += `<div class="field"><label>Font</label><select id="th-font">` +
+    Object.keys(FONTS).map(k => `<option value="${k}"${t.font === k ? ' selected' : ''}>${k}</option>`).join('') +
+    `</select></div></div>`;
+
+  // deck footer
+  html += `<div class="insp-section"><h3>Deck</h3>`;
+  html += `<div class="theme-row"><label>Show footer</label><input type="checkbox" id="ft-show" ${f.show ? 'checked' : ''}></div>`;
+  html += `<div class="field"><input type="text" id="ft-text" placeholder="Footer text (optional)" value="${esc(f.text || '')}"></div>`;
+  html += `<div class="theme-row"><label>Slide numbers</label><input type="checkbox" id="ft-numbers" ${f.numbers ? 'checked' : ''}></div></div>`;
+
+  insp.innerHTML = html;
+  wireInspector(s);
+}
+
+function wireInspector(s) {
+  const insp = $('inspector');
+
+  // text/para/bullets/code content (coalesced undo, live preview)
+  insp.querySelectorAll('textarea[data-role], input[type=text][data-role]').forEach(el => {
+    el.addEventListener('focus', () => { aiLastRole = el.getAttribute('data-role'); });
+    el.addEventListener('input', () => {
+      const role = el.getAttribute('data-role');
+      const blk = s.blocks.find(bb => bb.role === role);
+      if (!blk) return;
+      coalescedUndo('content:' + s.id + ':' + role);
+      blk.content = el.value; markDirty(); renderPreview(); renderSlideList();
+    });
+  });
+
+  // notes (coalesced undo; not part of the rendered slide)
+  const notes = $('ins-notes');
+  if (notes) notes.addEventListener('input', () => {
+    coalescedUndo('notes:' + s.id);
+    s.notes = notes.value; markDirty();
+  });
+
+  // layout
+  $('ins-layout').addEventListener('change', (e) => { pushUndo(); s.layout = e.target.value; syncBlocks(s); markDirty(); renderAll(); });
+
+  // image controls
+  const file = $('img-file');
+  if (file) {
+    file.addEventListener('change', async () => {
+      const fl = file.files && file.files[0]; if (!fl) return;
+      try {
+        const dataURI = await processImageFile(fl);
+        const blk = s.blocks.find(b => b.type === 'image');
+        if (blk) { pushUndo(); blk.content = dataURI; markDirty(); renderAll(); setStatus('Image added (' + kb(dataURI) + ' KB)'); }
+      } catch (e) { setStatus('Image failed: ' + e.message); }
+    });
+    $('img-fit').addEventListener('change', (e) => {
+      const blk = s.blocks.find(b => b.type === 'image'); if (!blk) return;
+      pushUndo(); blk.style.fit = e.target.value; markDirty(); renderAll();
+    });
+    $('img-clear').addEventListener('click', () => {
+      const blk = s.blocks.find(b => b.type === 'image'); if (!blk) return;
+      pushUndo(); blk.content = ''; markDirty(); renderAll();
+    });
+  }
+
+  // code controls
+  const lang = $('code-lang');
+  if (lang) {
+    const blk = s.blocks.find(b => b.type === 'code');
+    lang.addEventListener('input', () => { coalescedUndo('lang:' + s.id); blk.style.lang = lang.value; markDirty(); renderPreview(); });
+    $('code-lines').addEventListener('change', (e) => { pushUndo(); blk.style.lines = e.target.checked; markDirty(); renderPreview(); renderSlideList(); });
+    $('code-size').addEventListener('change', (e) => { pushUndo(); blk.style.size = e.target.value; markDirty(); renderPreview(); renderSlideList(); });
+  }
+
+  // theme - preset/font are discrete (full re-render is fine)
+  const applyTheme = (patch, preset) => { pushUndo(); deck.body.theme = Object.assign({}, theme(), patch, preset ? { preset } : {}); markDirty(); renderAll(); };
+  $('th-preset').addEventListener('change', (e) => { const k = e.target.value; if (THEME_PRESETS[k]) applyTheme({ ...THEME_PRESETS[k] }, k); });
+  $('th-font').addEventListener('change', (e) => applyTheme({ font: e.target.value }, theme().preset));
+  // colour pickers fire 'input' continuously while dragging the grid; re-rendering
+  // the inspector here would destroy the live <input> and close the picker. So
+  // update the model + preview/list ONLY, and reflect "custom" in the preset
+  // dropdown without rebuilding the panel.
+  const applyColor = (patch) => {
+    coalescedUndo('theme'); deck.body.theme = Object.assign({}, theme(), patch, { preset: 'custom' });
+    markDirty(); const ps = $('th-preset'); if (ps) ps.value = 'custom';
+    renderPreview(); renderSlideList();
+  };
+  $('th-bg').addEventListener('input', (e) => applyColor({ bg: e.target.value }));
+  $('th-fg').addEventListener('input', (e) => applyColor({ fg: e.target.value }));
+  $('th-accent').addEventListener('input', (e) => applyColor({ accent: e.target.value }));
+
+  // footer
+  const applyFooter = (patch) => { pushUndo(); deck.body.footer = Object.assign({}, footer(), patch); markDirty(); renderAll(); };
+  $('ft-show').addEventListener('change', (e) => applyFooter({ show: e.target.checked }));
+  $('ft-text').addEventListener('input', (e) => { coalescedUndo('footer'); deck.body.footer = Object.assign({}, footer(), { text: e.target.value }); markDirty(); renderPreview(); });
+  $('ft-numbers').addEventListener('change', (e) => applyFooter({ numbers: e.target.checked }));
+}
+
+function renderAll() {
+  $('deck-title').value = deck.meta.title || '';
+  renderSlideList(); renderPreview(); renderInspector(); refreshUndoButtons();
+}
+
+// ── image processing - canvas re-encode strips EXIF/GPS/metadata + downscales ──
+function processImageFile(file, maxDim = MAX_IMG_DIM) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (!w || !h) return reject(new Error('Unsupported image'));
+        const scale = Math.min(1, maxDim / Math.max(w, h));
+        w = Math.round(w * scale); h = Math.round(h * scale);
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        // Canvas output carries NO source metadata - EXIF/GPS/author are gone.
+        const keepAlpha = /png|svg|webp|gif/i.test(file.type || '');
+        resolve(c.toDataURL(keepAlpha ? 'image/png' : 'image/jpeg', IMG_QUALITY));
+      };
+      img.onerror = () => reject(new Error('Could not decode image'));
+      img.src = fr.result;
+    };
+    fr.onerror = () => reject(new Error('Could not read file'));
+    fr.readAsDataURL(file);
+  });
+}
+
+async function insertImageFromFile(file) {
+  if (!file || (file.type || '').indexOf('image') !== 0) return;
+  try {
+    const dataURI = await processImageFile(file);
+    let s = slide(), blk = s.blocks.find(b => b.type === 'image');
+    pushUndo();
+    if (!blk) { s = syncBlocks(blankSlide('imagecaption')); slides().splice(cur + 1, 0, s); cur += 1; blk = s.blocks.find(b => b.type === 'image'); }
+    blk.content = dataURI; markDirty(); renderAll();
+    setStatus('Image added (' + kb(dataURI) + ' KB)');
+  } catch (e) { setStatus('Image failed: ' + e.message); }
+}
+
+// ── slide operations ──────────────────────────────────────────────────
+function slideOp(op, i) {
+  const arr = slides();
+  if (op === 'up' && i === 0) return;
+  if (op === 'down' && i === arr.length - 1) return;
+  if (op === 'del' && arr.length <= 1) { setStatus('A deck needs at least one slide.'); return; }
+  pushUndo();
+  if (op === 'up') { [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]]; if (cur === i) cur = i - 1; else if (cur === i - 1) cur = i; }
+  else if (op === 'down') { [arr[i + 1], arr[i]] = [arr[i], arr[i + 1]]; if (cur === i) cur = i + 1; else if (cur === i + 1) cur = i; }
+  else if (op === 'dup') { const copy = JSON.parse(JSON.stringify(arr[i])); copy.id = LocalOffice.uuid(); arr.splice(i + 1, 0, copy); cur = i + 1; }
+  else if (op === 'del') { arr.splice(i, 1); if (cur >= arr.length) cur = arr.length - 1; }
+  markDirty(); renderAll();
+}
+function addSlide() {
+  pushUndo();
+  const layout = slide() ? slide().layout : 'bullets';
+  slides().splice(cur + 1, 0, syncBlocks(blankSlide(layout)));
+  cur += 1; markDirty(); renderAll();
+}
+function go(delta) {
+  const n = slides().length; if (!n) return;
+  cur = Math.max(0, Math.min(n - 1, cur + delta)); renderAll();
+}
+
+// ── templates (embedded - offline can't fetch template files) ─────────
+function mk(layout, content, extra) {
+  const s = syncBlocks(blankSlide(layout));
+  for (const role in content) { const b = s.blocks.find(x => x.role === role); if (b) b.content = content[role]; }
+  if (extra) {
+    if (extra.notes) s.notes = extra.notes;
+    if (extra.lang) { const cb = s.blocks.find(x => x.type === 'code'); if (cb) cb.style.lang = extra.lang; }
+  }
+  return s;
+}
+const TEMPLATES = {
+  design: () => ({ title: 'Design Review', slides: [
+    mk('title',   { title: 'Design Review', subtitle: 'Technical design · v0.1' }),
+    mk('bullets', { title: 'Agenda', body: 'Problem & context\nGoals / non-goals\nProposed approach\nAlternatives\nRisks & open questions\nNext steps' }),
+    mk('bullets', { title: 'Problem & context', body: 'What are we solving\nWhy now\nConstraints' }, { notes: 'Anchor the room on the problem before the solution.' }),
+    mk('twocol',  { title: 'Approach', left: 'Option A\nPros\nCons', right: 'Option B\nPros\nCons' }),
+    mk('code',    { title: 'Key interface', code: 'function handle(req) {\n  // contract sketch\n  return ok(req);\n}' }, { lang: 'js' }),
+    mk('imagecaption', { caption: 'Architecture / benchmark' }),
+    mk('bullets', { title: 'Risks & open questions', body: 'Risk 1 - mitigation\nRisk 2 - mitigation\nOpen question' }),
+    mk('bullets', { title: 'Next steps', body: 'Decision needed\nWho / by when\nFollow-ups' }),
+  ] }),
+  rca: () => ({ title: 'Incident Postmortem', slides: [
+    mk('title',   { title: 'Incident Postmortem', subtitle: 'Blameless RCA' }),
+    mk('bullets', { title: 'Summary', body: 'What happened (one line)\nDetected by\nDuration' }),
+    mk('bullets', { title: 'Timeline', body: 'T0 - trigger\nT+? - detected\nT+? - mitigated\nT+? - resolved' }, { notes: 'Use UTC; keep it factual.' }),
+    mk('bullets', { title: 'Impact', body: 'Who / what was affected\nMagnitude\nSLO/error budget' }),
+    mk('bullets', { title: 'Root cause', body: 'Contributing factors\nWhy it wasn’t caught earlier' }),
+    mk('code',    { title: 'Error / log', code: '[ERROR] connection pool exhausted\n  at db.acquire (pool.js:88)' }, { lang: 'log' }),
+    mk('bullets', { title: 'Remediation', body: 'Immediate fix\nShort-term\nLong-term' }),
+    mk('bullets', { title: 'Action items', body: 'Action - owner - due\nAction - owner - due' }),
+  ] }),
+  demo: () => ({ title: 'Sprint Demo', slides: [
+    mk('title',   { title: 'Sprint Demo', subtitle: 'What shipped this sprint' }),
+    mk('bullets', { title: 'What shipped', body: 'Feature / fix 1\nFeature / fix 2\nFeature / fix 3' }),
+    mk('imagecaption', { caption: 'Demo screenshot' }, { notes: 'Walk the live flow; have a fallback screenshot.' }),
+    mk('bullets', { title: 'Metrics', body: 'Before → after\nAdoption / latency / errors' }),
+    mk('bullets', { title: 'Blockers', body: 'Blocker - needed from whom' }),
+    mk('bullets', { title: 'Next sprint', body: 'Priority 1\nPriority 2\nStretch' }),
+  ] }),
+  field: () => ({ title: 'Field Report', slides: [
+    mk('title',   { title: 'Field Report', subtitle: 'Findings & observations' }),
+    mk('bullets', { title: 'Question', body: 'What we set out to learn' }),
+    mk('bullets', { title: 'Method', body: 'Setup\nProcedure\nData collected' }),
+    mk('twocol',  { title: 'Findings', left: 'Observation A\nObservation B', right: 'Observation C\nObservation D' }),
+    mk('imagecaption', { caption: 'Photo / chart' }),
+    mk('bullets', { title: 'Conclusion', body: 'What it means\nLimitations\nNext investigation' }, { notes: 'Separate observation from interpretation.' }),
+  ] }),
+};
+function loadTemplate(id) {
+  const build = TEMPLATES[id]; if (!build) return;
+  const t = build();
+  deck = freshDeckEnvelope(t.title, { theme: defaultTheme(), footer: defaultFooter(), slides: t.slides });
+  handle = null; cur = 0; dirty = true; undoStack = []; redoStack = []; lastUndoKey = null;
+  renderAll(); setStatus('Started from template: ' + t.title);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   EXPORT - single-file HTML + PDF (print).
+   FIREWALL: exports carry ZERO identifying metadata and ZERO speaker notes.
+   Only the deck title (authored content), slide content (incl. re-encoded,
+   metadata-stripped images) and theme/footer go out.
+   ════════════════════════════════════════════════════════════════════ */
+function exportSlidesMarkup() {
+  const t = theme();
+  return slides().map((s, i) =>
+    `<section class="slide" style="${slideStyleVars(t)}">${slideInnerHTML(s, t, { export: true, chrome: true, index: i + 1, total: slides().length })}</section>`
+  ).join('\n');
+}
+function buildStandaloneHTML() {
+  const t = theme();
+  const title = esc(deck.meta.title || 'Slides');
+  const css = `
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;font-family:${t.font && FONTS[t.font] ? FONTS[t.font] : FONTS.system}}
+.deck{height:100vh;display:flex;align-items:center;justify-content:center}
+.slide{position:relative;width:min(100vw,177.78vh);aspect-ratio:16/9;overflow:hidden;container-type:size;display:none}
+.slide.show{display:block}
+.block{position:absolute;overflow:hidden;white-space:pre-wrap;word-break:break-word;display:flex;flex-direction:column;padding:0 1.5cqw}
+.block ul{margin:0;padding-left:1.1em}.block li{margin:.15em 0}
+.t-title{font-weight:800;font-size:7.5cqw;line-height:1.05;justify-content:center}
+.t-sub{font-weight:400;font-size:3.4cqw;opacity:.8}
+.t-head{font-weight:700;font-size:4.6cqw}
+.t-body{font-size:3.1cqw}
+.t-section{font-weight:800;font-size:6.5cqw;line-height:1.1;justify-content:center}
+.t-quote{font-weight:600;font-size:4.6cqw;font-style:italic;line-height:1.25;justify-content:center}
+.t-attr{font-size:2.8cqw;opacity:.75}.t-free{font-size:3.2cqw}
+.bimg{width:100%;height:100%;display:block}
+.t-table{font-size:2.8cqw;text-align:left}
+.dt{border-collapse:collapse;width:100%}.dt th,.dt td{border:.14cqw solid currentColor;padding:.5cqw .9cqw;text-align:left;vertical-align:top}.dt th{font-weight:700;background:#80808026}
+.t-code{font-family:ui-monospace,'Cascadia Code','Courier New',monospace;text-align:left;background:#00000026;border-radius:.8cqw;overflow:auto;padding:0}
+.cs-s{font-size:2.0cqw}.cs-m{font-size:2.6cqw}.cs-l{font-size:3.4cqw}
+.cwrap{padding:1cqw 1.3cqw}.cl{display:flex;white-space:pre;line-height:1.4}
+.cg{opacity:.4;min-width:2.4em;text-align:right;padding-right:1em;user-select:none}.cc{white-space:pre}
+.clang{position:absolute;top:.6cqw;right:1.1cqw;font-size:1.9cqw;opacity:.5}
+.footer{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:.7cqw 2.2cqw;font-size:2.1cqw;opacity:.55}
+.nav{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#fff8;font:12px system-ui}
+@media print{
+  @page{size:landscape;margin:0}
+  html,body{height:auto;background:#fff}
+  .deck{display:block;height:auto}
+  .slide{display:block!important;width:100%;height:100vh;page-break-after:always}
+  .nav{display:none}
+}`;
+  const viewer =
+    "var slides=[].slice.call(document.querySelectorAll('.slide'));var i=0;" +
+    "function show(n){i=Math.max(0,Math.min(slides.length-1,n));slides.forEach(function(s,k){s.classList.toggle('show',k===i);});}" +
+    "document.addEventListener('keydown',function(e){" +
+    "if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown')show(i+1);" +
+    "else if(e.key==='ArrowLeft'||e.key==='PageUp')show(i-1);" +
+    "else if(e.key==='Home')show(0);else if(e.key==='End')show(slides.length-1);});" +
+    "document.querySelector('.deck').addEventListener('click',function(){show(i+1);});show(0);";
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}</title><style>${css}</style></head>
+<body><div class="deck">
+${exportSlidesMarkup()}
+</div>
+<div class="nav">← → navigate · click to advance</div>
+<script>${viewer}<\/script>
+</body></html>`;
+}
+function exportHTML() {
+  const html = buildStandaloneHTML();
+  const blob = new Blob([html], { type: 'text/html' }), url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = (LocalOffice.slugify(deck.meta.title) || 'slides') + '.html';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 0);
+  setStatus('Exported standalone HTML');
+}
+function exportPDF() {
+  // No PDF library (no deps): render the standalone deck in a hidden iframe
+  // and invoke the browser's print → "Save as PDF". Print CSS = one slide/page.
+  const html = buildStandaloneHTML();
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+  document.body.appendChild(iframe);
+  iframe.onload = () => { try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } finally { setTimeout(() => iframe.remove(), 1500); } };
+  iframe.srcdoc = html;
+  setStatus('Opening print dialog - choose "Save as PDF"');
+}
+
+// ── present mode (two modes: plain, and presenter view with side notes) ──
+let presenting = false, notesOn = false;
+function slideTitleHint(s) {
+  const b = (s.blocks || []).find(b => b.content && (b.type === 'text' || b.type === 'bullets' || b.type === 'para'));
+  return b ? String(b.content).split('\n')[0].slice(0, 40) : '';
+}
+function present(on, withNotes) {
+  presenting = on;
+  if (on) notesOn = !!withNotes;
+  const el = $('present');
+  el.classList.toggle('on', on);
+  if (on) { renderPresent(); if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); }
+  else { el.classList.remove('with-notes'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
+}
+function renderPresent() {
+  const t = theme(), s = slide(), el = $('present-slide');
+  el.setAttribute('style', slideStyleVars(t));
+  el.innerHTML = s ? slideInnerHTML(s, t, { chrome: true, index: cur + 1, total: slides().length }) : '';
+  $('present').classList.toggle('with-notes', notesOn);
+  $('present-notes').textContent = (s && s.notes) || '(no notes for this slide)';
+  $('pa-counter').textContent = `${cur + 1} / ${slides().length}`;
+  const nx = slides()[cur + 1];
+  $('pa-next').textContent = nx ? ('Next → ' + (slideTitleHint(nx) || `slide ${cur + 2}`)) : 'End of deck';
+}
+
+// ── wiring ────────────────────────────────────────────────────────────
+$('btn-new').onclick = () => { if (!dirty || confirm('Discard unsaved changes?')) newDeck(); };
+$('tpl').onchange = (e) => {
+  const id = e.target.value; e.target.value = '';
+  if (!id) return;
+  if (!dirty || confirm('Discard unsaved changes?')) loadTemplate(id);
+};
+$('btn-open').onclick = openDeck;
+$('btn-save').onclick = () => saveDeck(false);
+$('btn-saveas').onclick = () => saveDeck(true);
+$('btn-undo').onclick = undo;
+$('btn-redo').onclick = redo;
+$('btn-export-html').onclick = exportHTML;
+$('btn-export-pdf').onclick = exportPDF;
+$('btn-present').onclick = () => present(true, false);
+$('btn-present-notes').onclick = () => present(true, true);
+$('present-exit').onclick = () => present(false);
+
+// ── canvas zoom ───────────────────────────────────────────────────────
+let zoom = 1;
+function applyZoom() { $('stage-scroll').style.setProperty('--zoom', zoom); $('zoom-label').textContent = Math.round(zoom * 100) + '%'; }
+function setZoom(z) { zoom = Math.max(0.25, Math.min(4, z)); applyZoom(); }
+$('zoom-in').onclick = () => setZoom(zoom * 1.25);
+$('zoom-out').onclick = () => setZoom(zoom / 1.25);
+$('zoom-fit').onclick = () => setZoom(1);
+$('stage-scroll').addEventListener('wheel', (e) => {
+  if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }
+}, { passive: false });
+$('addslide').onclick = addSlide;
+$('prev').onclick = () => go(-1);
+$('next').onclick = () => go(1);
+$('deck-title').addEventListener('focus', () => coalescedUndo('title'));
+$('deck-title').addEventListener('input', (e) => { coalescedUndo('title'); deck.meta.title = e.target.value; markDirty(); });
+
+// drag-and-drop an image onto the stage
+const stage = $('stage');
+stage.addEventListener('dragover', (e) => { e.preventDefault(); });
+stage.addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) insertImageFromFile(f); });
+
+// ── LocalOffice Clipboard Protocol (paste) ───────────────────────────
+function clipDecode(b64) { return JSON.parse(decodeURIComponent(escape(atob(b64)))); }
+function readClip(e) {
+  let fragment = null;
+  const html = e.clipboardData ? e.clipboardData.getData('text/html') : '';
+  if (html) { const m = html.match(/data-localoffice="([^"]*)"/); if (m) { try { fragment = clipDecode(m[1]); } catch (_) {} } }
+  return { fragment, text: e.clipboardData ? e.clipboardData.getData('text/plain') : '' };
+}
+// A clipboard grid (from LocalSheets) or TSV → a table slide; plain lines → bullets.
+function clipToDeckContent(clip) {
+  let grid = null;
+  if (clip.fragment && clip.fragment.kind === 'grid' && Array.isArray(clip.fragment.grid)) grid = clip.fragment.grid;
+  else {
+    const text = (clip.text || '').replace(/\r\n/g, '\n').trim();
+    if (!text) return null;
+    const lines = text.split('\n');
+    if (lines.some(l => l.includes('\t'))) grid = lines.map(l => l.split('\t'));
+    else return { layout: 'bullets', content: lines.map(s => s.trim()).filter(Boolean).join('\n') };
+  }
+  if (!grid || !grid.length) return null;
+  const content = grid.map(r => r.map(c => String(c).trim()).join(' | ')).join('\n');
+  return { layout: 'table', content };
+}
+function insertPastedContent(spec) {
+  pushUndo();
+  const s = syncBlocks(blankSlide(spec.layout));
+  const role = spec.layout === 'table' ? 'table' : 'body';
+  const blk = s.blocks.find(b => b.role === role); if (blk) blk.content = spec.content;
+  slides().splice(cur + 1, 0, s); cur += 1; markDirty(); renderAll();
+  setStatus('Pasted a ' + spec.layout + ' slide');
+}
+document.addEventListener('paste', (e) => {
+  if (presenting) return;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return; // let fields paste normally
+  const items = e.clipboardData && e.clipboardData.items;
+  if (items) for (const it of items) {
+    if (it.type && it.type.indexOf('image') === 0) { const f = it.getAsFile(); if (f) { e.preventDefault(); insertImageFromFile(f); } return; }
+  }
+  const spec = clipToDeckContent(readClip(e));           // data → a new slide
+  if (spec) { e.preventDefault(); insertPastedContent(spec); }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (presenting) {
+    if (e.key === 'ArrowRight' || e.key === ' ') { go(1); renderPresent(); }
+    else if (e.key === 'ArrowLeft') { go(-1); renderPresent(); }
+    else if (e.key === 'n' || e.key === 'N') { notesOn = !notesOn; renderPresent(); }
+    else if (e.key === 'Escape') present(false);
+    return;
+  }
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveDeck(false); }
+  else if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+  else if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); setZoom(zoom * 1.25); }
+  else if (mod && e.key === '-') { e.preventDefault(); setZoom(zoom / 1.25); }
+  else if (mod && e.key === '0') { e.preventDefault(); setZoom(1); }
+  else {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (typing) return;
+    if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); go(1); }
+    else if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
+  }
+});
+
+window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ════════════════════════════════════════════════════════════════════
+   LOCAL AI (Ollama) - OPTIONAL, and the ONLY network call in localDeck.
+   Talks to a local Ollama at localhost:11434; nothing leaves the machine.
+   Ollama needs OLLAMA_ORIGINS=* to accept file:// origins - see OLLAMA_SETUP.md.
+   AI never changes the deck on its own: it proposes text / a slide patch, and
+   the user explicitly applies it. Non-deterministic by nature, so it never
+   decides correctness - purely an authoring aid.
+   ════════════════════════════════════════════════════════════════════ */
+let aiLastRole = null; // last inspector field the user focused (insert target)
+const AI = {
+  host: 'http://localhost:11434',
+  abortCtrl: null,
+  lastResponse: '',
+  parsedPatch: null,
+
+  mode() { const c = document.querySelector('input[name="ai-mode"]:checked'); return (c && c.value) || 'assist'; },
+
+  async detect() {
+    const status = $('ai-status'), sel = $('ai-model');
+    status.classList.remove('err'); status.textContent = 'Detecting Ollama…';
+    try {
+      const res = await fetch(this.host + '/api/tags');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const models = ((await res.json()).models || []).map(m => m.name);
+      if (!models.length) { sel.innerHTML = '<option value="">(no models - run: ollama pull llama3.2)</option>'; status.textContent = 'Ollama is running but no models are installed.'; return; }
+      sel.innerHTML = models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+      status.textContent = `Connected. ${models.length} model${models.length > 1 ? 's' : ''} available.`;
+    } catch (e) {
+      sel.innerHTML = '<option value="">(Ollama not detected)</option>';
+      status.classList.add('err');
+      status.textContent = 'Cannot reach Ollama. See OLLAMA_SETUP.md - setup differs per OS.';
+    }
+  },
+
+  slideContext() {
+    const s = slide(); if (!s) return '';
+    const fields = (LAYOUTS[s.layout] || LAYOUTS.blank).fields;
+    let ctx = `Current slide layout: ${s.layout}.\n`;
+    fields.forEach(f => { const b = s.blocks.find(x => x.role === f.role); ctx += `- ${f.role} (${f.type}): ${b && b.content ? JSON.stringify(b.content) : '(empty)'}\n`; });
+    return ctx;
+  },
+
+  buildSlidePatchPrompt(userPrompt) {
+    const s = slide();
+    const fields = (LAYOUTS[s.layout] || LAYOUTS.blank).fields;
+    const roleList = fields.map(f => `"${f.role}" (${f.type === 'bullets' ? 'bullet list - separate items with \\n' : f.type})`).join(', ');
+    return `You fill in ONE presentation slide. Output ONLY a JSON object - no markdown, no commentary, no code fences.
+Valid keys for this slide: ${roleList}.
+Values are plain strings; for bullet fields separate bullets with \\n. Keep it concise.
+
+${this.slideContext()}
+User request: ${userPrompt}
+
+Respond with the JSON object only:`;
+  },
+
+  async send() {
+    const model = $('ai-model').value, prompt = $('ai-prompt').value.trim();
+    if (!model) return this._err('Pick a model first.');
+    if (!prompt) return this._err('Enter a prompt.');
+    const isPatch = this.mode() === 'slide';
+    const includeCtx = $('ai-include').checked;
+    const full = isPatch ? this.buildSlidePatchPrompt(prompt)
+                         : (prompt + (includeCtx ? '\n\n' + this.slideContext() : ''));
+    const status = $('ai-status'), respEl = $('ai-response');
+    status.classList.remove('err'); status.textContent = 'Asking ' + model + '…';
+    respEl.classList.add('hidden'); respEl.textContent = '';
+    ['ai-insert-field', 'ai-insert-notes', 'ai-apply-slide'].forEach(id => $(id).classList.add('hidden'));
+    this.parsedPatch = null; this.lastResponse = '';
+    this.abortCtrl = new AbortController();
+    $('ai-send').classList.add('hidden'); $('ai-stop').classList.remove('hidden');
+    const t0 = Date.now();
+    const ticker = setInterval(() => { status.textContent = 'Asking ' + model + '… ' + ((Date.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
+    let acc = '';
+    try {
+      const body = { model, prompt: full, stream: true };
+      if (isPatch) body.options = { temperature: 0 };
+      const res = await fetch(this.host + '/api/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), signal: this.abortCtrl.signal
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!isPatch) respEl.classList.remove('hidden');
+      const reader = res.body.getReader(), dec = new TextDecoder(); let buf = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const ln of lines) {
+          if (!ln.trim()) continue;
+          try { const ch = JSON.parse(ln); if (typeof ch.response === 'string') { acc += ch.response; if (!isPatch) respEl.textContent = acc; } } catch { /* partial line */ }
+        }
+      }
+      this.lastResponse = acc; clearInterval(ticker);
+      const dt = ((Date.now() - t0) / 1000).toFixed(1);
+      if (isPatch) {
+        const parsed = this._extractJson(acc);
+        const v = parsed && this._validateSlidePatch(parsed);
+        if (!v || !v.ok) { respEl.textContent = acc; respEl.classList.remove('hidden'); status.classList.add('err'); status.textContent = `Got ${dt}s response but no usable slide JSON.`; return; }
+        this.parsedPatch = v.patch;
+        respEl.textContent = Object.entries(v.patch).map(([k, val]) => `${k} ← ${String(val).replace(/\n/g, ' / ')}`).join('\n');
+        respEl.classList.remove('hidden');
+        $('ai-apply-slide').classList.remove('hidden');
+        status.textContent = `Got ${dt}s response. ${Object.keys(v.patch).length} field(s). Review then Apply.`;
+      } else {
+        $('ai-insert-field').classList.remove('hidden');
+        $('ai-insert-notes').classList.remove('hidden');
+        status.textContent = `Done in ${dt}s.`;
+      }
+    } catch (e) {
+      clearInterval(ticker); status.classList.add('err');
+      status.textContent = e.name === 'AbortError' ? 'Cancelled.' : ('Error: ' + e.message);
+    } finally {
+      clearInterval(ticker); this.abortCtrl = null;
+      $('ai-send').classList.remove('hidden'); $('ai-stop').classList.add('hidden');
+    }
+  },
+
+  _extractJson(text) {
+    let s = String(text).trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+    const start = s.indexOf('{'); if (start < 0) return null;
+    let depth = 0;
+    for (let i = start; i < s.length; i++) {
+      if (s[i] === '{') depth++;
+      else if (s[i] === '}') { depth--; if (depth === 0) { try { return JSON.parse(s.slice(start, i + 1)); } catch { return null; } } }
+    }
+    return null;
+  },
+
+  _validateSlidePatch(obj) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { ok: false };
+    const s = slide();
+    const roles = new Set((LAYOUTS[s.layout] || LAYOUTS.blank).fields.map(f => f.role));
+    const patch = {};
+    for (const [k, v] of Object.entries(obj)) { if (!roles.has(k) || v == null) continue; patch[k] = String(v); }
+    if (!Object.keys(patch).length) return { ok: false };
+    return { ok: true, patch };
+  },
+
+  applySlidePatch() {
+    if (!this.parsedPatch) return;
+    pushUndo(); const s = slide();
+    for (const [role, val] of Object.entries(this.parsedPatch)) { const b = s.blocks.find(x => x.role === role); if (b) b.content = val; }
+    markDirty(); renderAll();
+    $('ai-apply-slide').classList.add('hidden');
+    $('ai-status').textContent = 'Applied to slide. Ctrl+Z to undo.';
+    this.parsedPatch = null;
+  },
+
+  insertField() {
+    if (!this.lastResponse) return;
+    const s = slide();
+    const role = (aiLastRole && s.blocks.find(b => b.role === aiLastRole)) ? aiLastRole : null;
+    if (!role) return this._err('Focus a text field in the inspector first.');
+    pushUndo(); s.blocks.find(b => b.role === role).content = this.lastResponse; markDirty(); renderAll();
+    $('ai-status').textContent = `Inserted into "${role}". Ctrl+Z to undo.`;
+  },
+
+  insertNotes() {
+    if (!this.lastResponse) return;
+    pushUndo(); const s = slide(); s.notes = (s.notes ? s.notes + '\n' : '') + this.lastResponse; markDirty(); renderAll();
+    $('ai-status').textContent = 'Added to speaker notes. Ctrl+Z to undo.';
+  },
+
+  _err(msg) { const st = $('ai-status'); st.classList.add('err'); st.textContent = msg; },
+  show() { $('ai-panel').classList.remove('hidden'); $('ai-prompt').focus(); this.detect(); },
+  hide() { $('ai-panel').classList.add('hidden'); }
+};
+$('btn-ai').onclick = () => AI.show();
+$('ai-close').onclick = () => AI.hide();
+$('ai-send').onclick = () => AI.send();
+$('ai-stop').onclick = () => { if (AI.abortCtrl) AI.abortCtrl.abort(); };
+$('ai-insert-field').onclick = () => AI.insertField();
+$('ai-insert-notes').onclick = () => AI.insertNotes();
+$('ai-apply-slide').onclick = () => AI.applySlidePatch();
+$('ai-prompt').addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); AI.send(); } });
+$('ai-panel').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); AI.hide(); } });
+window.AI = AI; // handle for tests + console power-use; doesn't change the UX
+
+// ── app light / dark theme (editor chrome only - the deck's own theme is separate) ──
+const THEME_KEY = 'localdeck_theme';
+function applyAppTheme() {
+  let stored = null; try { stored = localStorage.getItem(THEME_KEY); } catch (e) {}
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = stored === 'dark' || (stored === null && prefersDark);
+  document.body.classList.toggle('light', !isDark);
+  const b = $('btn-theme'); if (b) b.textContent = isDark ? '☀' : '☾';
+}
+function toggleAppTheme() {
+  const isLight = document.body.classList.contains('light');
+  try { localStorage.setItem(THEME_KEY, isLight ? 'dark' : 'light'); } catch (e) {}
+  applyAppTheme();
+}
+$('btn-theme').onclick = toggleAppTheme;
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) {}
+  if (s === null) applyAppTheme();
+});
+
+// ── embed: opened inside the LocalOffice Hub (postMessage handoff) ────
+function applyOpenedDeck(env, h) {
+  if (env.type !== 'slides') throw new Error('Not a slides file ("' + env.type + '")');
+  deck = env;
+  if (!deck.body.theme) deck.body.theme = defaultTheme();
+  if (!deck.body.footer) deck.body.footer = defaultFooter();
+  if (!Array.isArray(deck.body.slides) || !deck.body.slides.length) deck.body.slides = [syncBlocks(blankSlide('title'))];
+  deck.body.slides.forEach(syncBlocks);
+  handle = h || null; cur = 0; dirty = false; undoStack = []; redoStack = []; lastUndoKey = null;
+  renderAll();
+}
+window.addEventListener('message', async (e) => {
+  const m = e.data; if (!m || m.proto !== 'localoffice') return;
+  if (m.type === 'open-handle') { if (m.handle) handle = m.handle; return; } // best-effort: enables in-place save when same-origin/hosted
+  if (m.type !== 'open') return;
+  try {
+    let t = m.text, h = m.handle || null;
+    if (h && t == null) t = await (await h.getFile()).text();
+    applyOpenedDeck(LocalOffice.parse(t).envelope, h);
+    (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: true }, '*');
+  } catch (err) { (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: false, error: String(err && err.message || err) }, '*'); }
+});
+// ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
+const JsonPanel = (function () {
+  'use strict';
+  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  function build() {
+    const s = document.createElement('style');
+    s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
+    document.head.appendChild(s);
+    host = document.createElement('div'); host.id = 'jp';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    document.body.appendChild(host);
+    ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
+    const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
+    on('x', hide);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
+    on('apply', apply);
+    host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
+    document.addEventListener('keydown', e => { if (host.classList.contains('on') && e.key === 'Escape') hide(); });
+  }
+  function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
+  function hide() { host.classList.remove('on'); }
+  function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
+  async function apply() {
+    try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
+    catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
+  }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function init(h) {
+    hooks = h; if (!host) build();
+    const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
+    const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
+    if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
+    else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
+    btn.addEventListener('click', open);
+  }
+  return { init, open };
+})();
+JsonPanel.init({ getText: () => LocalOffice.stringify(deck), applyText: (t) => applyOpenedDeck(LocalOffice.parse(t).envelope, handle) });
+
+if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localDeck' }, '*');
+
+// boot
+applyAppTheme();
+newDeck();
+if (!LocalOffice.supportsFS()) setStatus('Heads up: this browser uses download/upload (no in-place save).');
+</script>
+</body>
+</html>

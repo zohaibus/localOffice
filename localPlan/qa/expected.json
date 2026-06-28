@@ -1,0 +1,112 @@
+{
+  "planTitle": "My Plan",
+  "planSubtitle": "A place to keep track of what matters.",
+  "tracks": [
+    {
+      "id": "home_1700000000000_bdod6b",
+      "icon": "H",
+      "title": "home",
+      "subtitle": "Click to add a description",
+      "open": true,
+      "sections": [
+        {
+          "name": "Now",
+          "horizon": "now",
+          "items": [
+            {
+              "id": "item_1700000000000_tl4fmm",
+              "text": "plan meals for the week",
+              "done": false,
+              "priority": true
+            },
+            {
+              "id": "item_1700000000000_iapdvc",
+              "text": "grocery run",
+              "done": false,
+              "detail": "check what's already in the pantry first"
+            }
+          ]
+        },
+        {
+          "name": "Soon",
+          "horizon": "soon",
+          "items": [
+            {
+              "id": "item_1700000000000_lq6df2",
+              "text": "deep clean the kitchen",
+              "done": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "family_1700000000000_a6uj41",
+      "icon": "F",
+      "title": "family",
+      "subtitle": "Click to add a description",
+      "open": true,
+      "sections": [
+        {
+          "name": "Now",
+          "horizon": "now",
+          "items": [
+            {
+              "id": "item_1700000000000_m2hvs3",
+              "text": "pickup roster for soccer",
+              "done": false,
+              "priority": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "self_1700000000000_lo1syw",
+      "icon": "S",
+      "title": "self",
+      "subtitle": "Click to add a description",
+      "open": true,
+      "sections": [
+        {
+          "name": "Soon",
+          "horizon": "soon",
+          "items": [
+            {
+              "id": "item_1700000000000_x6rynb",
+              "text": "book annual physical",
+              "done": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wellness_1700000000000_1g36xg",
+      "icon": "W",
+      "title": "wellness",
+      "subtitle": "Click to add a description",
+      "open": true,
+      "sections": [
+        {
+          "name": "Now",
+          "horizon": "now",
+          "items": [
+            {
+              "id": "item_1700000000000_mocqum",
+              "text": "daily journaling",
+              "done": false,
+              "priority": true
+            },
+            {
+              "id": "item_1700000000000_gdwami",
+              "text": "set a bedtime routine",
+              "done": false,
+              "detail": "8pm lights out"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

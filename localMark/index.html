@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<!-- ════════════════════════════════════════════════════════════════════
+     localMark - a LocalOffice tool (body type: image)
+     An IP *sanitizer*, NOT a photo editor. Drop an image in; it is re-encoded
+     through a <canvas> (EXIF/GPS/camera metadata structurally stripped,
+     downscaled). Then:
+       • Redaction - black boxes are FLATTENED INTO the raster the moment you
+         confirm them: the pixels underneath are gone, not hidden. (The moat.)
+       • Watermark / annotation arrows + labels - non-destructive vector overlays.
+     Save = localoffice/v1 (type "image"). Export = a flat, metadata-free PNG.
+     Single file · no dependencies · no build step · fully offline. MIT.
+     ════════════════════════════════════════════════════════════════════ -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#fafaf7" />
+<title>localMark</title>
+<style>
+  :root {
+    --bg:#fafaf7; --surface:#fff; --surface-2:#f4f3ee; --ink:#1a1a17; --ink-2:#5a5a55;
+    --ink-3:#8a8a83; --border:rgba(0,0,0,.08); --border-strong:rgba(0,0,0,.14);
+    --accent:#5a4a2f; --accent-soft:#f0e9d8; --danger:#a44040; --radius:10px; --radius-sm:6px;
+    --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.05); --shadow-lg:0 10px 40px rgba(0,0,0,.12);
+    color-scheme: light;
+  }
+  body.dark {
+    --bg:#1a1a17; --surface:#242420; --surface-2:#2c2c27; --ink:#f0ede6; --ink-2:#b5b1a8;
+    --ink-3:#807c73; --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.16);
+    --accent:#c4a265; --accent-soft:#3a3320; --danger:#d98a8a; color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+         background: var(--bg); color: var(--ink); display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+
+  .toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface);
+             border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .toolbar input.title { font: inherit; font-weight: 600; font-size: 15px; color: var(--ink); background: transparent;
+             border: 1px solid transparent; border-radius: var(--radius-sm); padding: 5px 8px; min-width: 150px; flex: 0 1 220px; }
+  .toolbar input.title:hover { border-color: var(--border); }
+  .toolbar input.title:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+  .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+  .spacer { flex: 1; }
+  button { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong);
+           border-radius: var(--radius-sm); padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  button.tool.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  button.icon { padding: 6px 9px; }
+  #status { font-size: 12px; color: var(--ink-2); margin-left: 8px; }
+  #status.err { color: var(--danger); }
+
+  #canvas-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 20px;
+                 overflow: auto; background: repeating-conic-gradient(var(--surface-2) 0% 25%, transparent 0% 50%) 50% / 22px 22px; }
+  #view { background: #fff; box-shadow: var(--shadow-lg); border-radius: 2px; touch-action: none; cursor: crosshair; }
+  body.tool-select #view { cursor: default; }
+  #empty { text-align: center; color: var(--ink-2); max-width: 420px; }
+  #empty h1 { color: var(--ink); font-size: 20px; margin-bottom: 8px; }
+  #empty p { line-height: 1.6; margin: 8px 0; }
+  #empty .note { font-size: 12px; color: var(--ink-3); }
+  .hidden { display: none !important; }
+
+  @media print { .toolbar { display: none !important; } }
+</style>
+</head>
+<body class="light tool-redact">
+
+<div class="toolbar ui">
+  <input id="title" class="title" placeholder="Untitled image" aria-label="Title" />
+  <div class="sep"></div>
+  <button onclick="newMark()">New</button>
+  <button onclick="openMark()">Open</button>
+  <button onclick="saveMark()" title="Save (Ctrl+S)">Save</button>
+  <button onclick="saveMarkAs()">Save As</button>
+  <button onclick="importImage()" title="Import an image (it is scrubbed on import)">Import…</button>
+  <button onclick="exportPNG()" title="Export a flat, metadata-free PNG">Export PNG</button>
+  <div class="sep"></div>
+  <button class="tool" id="t-redact" onclick="setTool('redact')" title="Drag a permanent blackout box">▮ Redact</button>
+  <button class="tool" id="t-arrow" onclick="setTool('arrow')" title="Drag an annotation arrow">↗ Arrow</button>
+  <button class="tool" id="t-calibrate" onclick="setTool('calibrate')" title="Drag a line across a known-length feature to set the real-world scale">⊢ Calibrate</button>
+  <button class="tool" id="t-measure" onclick="setTool('measure')" title="Drag to measure a real-world distance (needs Calibrate)">📏 Measure</button>
+  <button onclick="addWatermark()" title="Add / change the watermark text">Watermark</button>
+  <button onclick="addQR()" title="Add a QR code (asset tag / URL) - bottom-right">QR</button>
+  <button onclick="undoOverlay()" title="Remove the last annotation (redactions are permanent)">Undo annot.</button>
+  <div class="spacer"></div>
+  <span id="status"></span>
+  <div class="sep"></div>
+  <button class="icon" id="theme-btn" onclick="toggleTheme()" title="Light / dark">☾</button>
+</div>
+
+<div id="canvas-wrap">
+  <canvas id="view" class="hidden"></canvas>
+  <div id="empty">
+    <h1>Sanitize an image</h1>
+    <p>Click <b>Import…</b>, drag a file here, or paste (Ctrl/Cmd-V). The image is
+       re-encoded on the spot - <b>EXIF / GPS / camera metadata is stripped</b> and
+       it's downscaled.</p>
+    <p class="note">Redaction blacks out the pixels <b>permanently</b> (they're
+       erased from the file). Watermarks and arrows are editable overlays. Export
+       is a flat, metadata-free PNG.</p>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept="image/*" class="hidden" />
+
+<script>
+// ── QR encoder (no dependencies) - byte mode, EC level M, versions 1-6 ─
+// Enough for asset tags & short/medium URLs (~106 bytes). The MATH is tested
+// offline (GF(256), Reed-Solomon zero-syndrome, full data round-trip); physical
+// scannability is confirmed by a one-time manual scan (see README).
+const QR = (function () {
+  'use strict';
+  const EXP = new Array(512), LOG = new Array(256);
+  (function () { let x = 1; for (let i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11d; } for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255]; })();
+  function gmul(a, b) { return (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]]; }
+  function rsGen(n) { let g = [1]; for (let i = 0; i < n; i++) { const ng = new Array(g.length + 1).fill(0); for (let j = 0; j < g.length; j++) { ng[j] ^= g[j]; ng[j + 1] ^= gmul(g[j], EXP[i]); } g = ng; } return g; }
+  function rsEnc(data, n) { const g = rsGen(n), rem = new Array(n).fill(0); for (let i = 0; i < data.length; i++) { const f = data[i] ^ rem[0]; rem.shift(); rem.push(0); if (f !== 0) for (let j = 0; j < n; j++) rem[j] ^= gmul(g[j + 1], f); } return rem; }
+  // EC level M characteristics + alignment-pattern centres, versions 1-6
+  const EC_M = { 1: { ec: 10, g: [[1, 16]] }, 2: { ec: 16, g: [[1, 28]] }, 3: { ec: 26, g: [[1, 44]] }, 4: { ec: 18, g: [[2, 32]] }, 5: { ec: 24, g: [[2, 43]] }, 6: { ec: 16, g: [[4, 27]] } };
+  const ALIGN = { 1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34] };
+  function dataCw(v) { let s = 0; EC_M[v].g.forEach(p => s += p[0] * p[1]); return s; }
+  function utf8(str) { const o = []; for (const ch of str) { let c = ch.codePointAt(0); if (c < 0x80) o.push(c); else if (c < 0x800) o.push(0xc0 | c >> 6, 0x80 | c & 63); else if (c < 0x10000) o.push(0xe0 | c >> 12, 0x80 | (c >> 6) & 63, 0x80 | c & 63); else o.push(0xf0 | c >> 18, 0x80 | (c >> 12) & 63, 0x80 | (c >> 6) & 63, 0x80 | c & 63); } return o; }
+  function pickVersion(len) { for (let v = 1; v <= 6; v++) if (dataCw(v) * 8 >= 4 + 8 + len * 8) return v; return -1; }
+  function maskFn(m, r, c) { switch (m) { case 0: return (r + c) % 2 === 0; case 1: return r % 2 === 0; case 2: return c % 3 === 0; case 3: return (r + c) % 3 === 0; case 4: return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0; case 5: return ((r * c) % 2) + ((r * c) % 3) === 0; case 6: return (((r * c) % 2) + ((r * c) % 3)) % 2 === 0; default: return (((r + c) % 2) + ((r * c) % 3)) % 2 === 0; } }
+  function fmtBits(mask) { const data = (0 << 3) | mask; let d = data << 10; const g = 0x537; for (let i = 14; i >= 10; i--) if (d & (1 << i)) d ^= g << (i - 10); return (((data << 10) | (d & 0x3ff)) ^ 0x5412) & 0x7fff; }
+  function buildCodewords(text) {
+    const bytes = utf8(String(text)); const v = pickVersion(bytes.length);
+    if (v < 0) throw new Error('Too long for QR (max ~106 chars)');
+    const bits = []; const push = (val, n) => { for (let i = n - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+    push(0b0100, 4); push(bytes.length, 8); bytes.forEach(b => push(b, 8));
+    const cap = dataCw(v) * 8;
+    for (let i = 0; i < 4 && bits.length < cap; i++) bits.push(0);
+    while (bits.length % 8) bits.push(0);
+    const pad = [0xEC, 0x11]; let pi = 0; while (bits.length < cap) { push(pad[pi % 2], 8); pi++; }
+    const dcw = []; for (let i = 0; i < bits.length; i += 8) { let b = 0; for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j]; dcw.push(b); }
+    const blocks = [], ecLen = EC_M[v].ec; let idx = 0;
+    EC_M[v].g.forEach(p => { for (let k = 0; k < p[0]; k++) { const d = dcw.slice(idx, idx + p[1]); idx += p[1]; blocks.push({ d, e: rsEnc(d, ecLen) }); } });
+    const maxD = Math.max.apply(null, blocks.map(b => b.d.length)), final = [];
+    for (let i = 0; i < maxD; i++) blocks.forEach(b => { if (i < b.d.length) final.push(b.d[i]); });
+    for (let i = 0; i < ecLen; i++) blocks.forEach(b => final.push(b.e[i]));
+    return { v, ecLen, blocks, final };
+  }
+  function baseMatrix(v) {
+    const size = 17 + 4 * v, mat = [], res = [];
+    for (let i = 0; i < size; i++) { mat.push(new Array(size).fill(0)); res.push(new Array(size).fill(false)); }
+    function finder(r, c) { for (let i = -1; i <= 7; i++) for (let j = -1; j <= 7; j++) { const rr = r + i, cc = c + j; if (rr < 0 || cc < 0 || rr >= size || cc >= size) continue; res[rr][cc] = true; const inb = i >= 0 && i <= 6 && j >= 0 && j <= 6; const ring = i === 0 || i === 6 || j === 0 || j === 6, core = i >= 2 && i <= 4 && j >= 2 && j <= 4; mat[rr][cc] = inb && (ring || core) ? 1 : 0; } }
+    finder(0, 0); finder(0, size - 7); finder(size - 7, 0);
+    for (let i = 8; i < size - 8; i++) { if (!res[6][i]) { mat[6][i] = i % 2 === 0 ? 1 : 0; res[6][i] = true; } if (!res[i][6]) { mat[i][6] = i % 2 === 0 ? 1 : 0; res[i][6] = true; } }
+    const ac = ALIGN[v]; ac.forEach(r => ac.forEach(c => { if (res[r][c]) return; for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) { const rr = r + i, cc = c + j; res[rr][cc] = true; const ring = Math.max(Math.abs(i), Math.abs(j)); mat[rr][cc] = (ring === 0 || ring === 2) ? 1 : 0; } }));
+    mat[size - 8][8] = 1; res[size - 8][8] = true;                       // dark module
+    for (let i = 0; i <= 8; i++) { res[8][i] = true; res[i][8] = true; } // reserve format areas
+    for (let i = 0; i < 8; i++) { res[8][size - 1 - i] = true; res[size - 1 - i][8] = true; }
+    return { size, mat, res };
+  }
+  function placeData(size, mat, res, final) {
+    const bitsArr = []; final.forEach(cw => { for (let i = 7; i >= 0; i--) bitsArr.push((cw >> i) & 1); });
+    let bi = 0, up = true;
+    for (let col = size - 1; col > 0; col -= 2) {
+      if (col === 6) col = 5;
+      for (let n = 0; n < size; n++) { const r = up ? size - 1 - n : n; for (let cc = 0; cc < 2; cc++) { const c = col - cc; if (res[r][c]) continue; mat[r][c] = bi < bitsArr.length ? bitsArr[bi++] : 0; } }
+      up = !up;
+    }
+  }
+  function applyMaskAndFormat(size, mat, res, mask) {
+    const M = mat.map(row => row.slice());
+    for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (!res[r][c] && maskFn(mask, r, c)) M[r][c] ^= 1;
+    const f = fmtBits(mask), bit = i => (f >> i) & 1;
+    for (let i = 0; i <= 5; i++) M[8][i] = bit(i);
+    M[8][7] = bit(6); M[8][8] = bit(7); M[7][8] = bit(8);
+    for (let i = 9; i <= 14; i++) M[14 - i][8] = bit(i);
+    for (let i = 0; i <= 7; i++) M[size - 1 - i][8] = bit(i);
+    for (let i = 8; i <= 14; i++) M[8][size - 15 + i] = bit(i);
+    M[size - 8][8] = 1;
+    return M;
+  }
+  function penalty(size, M) {
+    let p = 0;
+    for (let r = 0; r < size; r++) for (let pass = 0; pass < 2; pass++) { let run = 1, prev = -1; for (let c = 0; c < size; c++) { const v = pass ? M[c][r] : M[r][c]; if (v === prev) { run++; if (run === 5) p += 3; else if (run > 5) p += 1; } else { run = 1; prev = v; } } }
+    for (let r = 0; r < size - 1; r++) for (let c = 0; c < size - 1; c++) { const v = M[r][c]; if (v === M[r][c + 1] && v === M[r + 1][c] && v === M[r + 1][c + 1]) p += 3; }
+    let dark = 0; for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) dark += M[r][c]; const pct = dark * 100 / (size * size); p += Math.floor(Math.abs(pct - 50) / 5) * 10;
+    return p;
+  }
+  function encode(text) {
+    const { v, final } = buildCodewords(text);
+    const { size, mat, res } = baseMatrix(v);
+    placeData(size, mat, res, final);
+    let best = null, bestP = Infinity, bestMask = 0;
+    for (let m = 0; m < 8; m++) { const M = applyMaskAndFormat(size, mat, res, m); const pen = penalty(size, M); if (pen < bestP) { bestP = pen; best = M; bestMask = m; } }
+    return { size, mods: best, version: v, mask: bestMask };
+  }
+  return { encode, _gmul: gmul, _EXP: EXP, _LOG: LOG, _rsEnc: rsEnc, _buildCodewords: buildCodewords };
+})();
+
+// ── shared LocalOffice core (inlined; embed-aware IO) ─────────────────
+const LocalOffice = (function () {
+  'use strict';
+  const FORMAT = 'localoffice/v1', FORMAT_PREFIX = 'localoffice/', FILE_EXT = '.localoffice.json';
+  const TYPES = ['sheet', 'plan', 'flashcards', 'mindmap', 'slides', 'image', 'runbook', 'doc'];
+  function nowISO() { return new Date().toISOString(); }
+  function uuid() {
+    const c = (typeof crypto !== 'undefined') ? crypto : null;
+    if (c && typeof c.randomUUID === 'function') { try { return c.randomUUID(); } catch (_) {} }
+    let rnd;
+    if (c && typeof c.getRandomValues === 'function') { const b = new Uint8Array(16); c.getRandomValues(b); b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80; rnd = (i) => b[i]; }
+    else { const a = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256)); a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80; rnd = (i) => a[i]; }
+    const h = []; for (let i = 0; i < 16; i++) h.push((rnd(i) + 0x100).toString(16).slice(1));
+    return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+  }
+  function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function freshBody(type) { return type === 'image' ? { base: '', width: 0, height: 0, overlays: [] } : {}; }
+  function createEnvelope(type, opts = {}) {
+    if (!TYPES.includes(type)) throw new Error('createEnvelope: unknown type "' + type + '"');
+    const ts = nowISO();
+    return { format: FORMAT, type, meta: { id: opts.id || uuid(), title: opts.title || '', created: ts, modified: ts, app: opts.app || '', tags: Array.isArray(opts.tags) ? opts.tags.slice() : [] }, body: isPlainObject(opts.body) ? opts.body : freshBody(type) };
+  }
+  function validate(obj) {
+    const errors = [], warnings = [];
+    if (!isPlainObject(obj)) return { ok: false, errors: ['Not a JSON object.'], warnings, type: null };
+    if (typeof obj.format !== 'string') errors.push('Missing "format".');
+    else if (!obj.format.startsWith(FORMAT_PREFIX)) errors.push('Unrecognized format.');
+    if (typeof obj.type !== 'string' || !obj.type) errors.push('Missing "type".');
+    else if (!TYPES.includes(obj.type)) warnings.push('Unknown type "' + obj.type + '".');
+    if (!isPlainObject(obj.meta)) errors.push('Missing "meta".');
+    if (!isPlainObject(obj.body)) warnings.push('Missing "body".');
+    return { ok: errors.length === 0, errors, warnings, type: typeof obj.type === 'string' ? obj.type : null };
+  }
+  function normalize(obj) {
+    if (!isPlainObject(obj.meta)) obj.meta = {};
+    const m = obj.meta;
+    if (typeof m.id !== 'string' || !m.id) m.id = uuid();
+    if (typeof m.title !== 'string') m.title = '';
+    if (typeof m.created !== 'string') m.created = nowISO();
+    if (typeof m.modified !== 'string') m.modified = m.created;
+    if (typeof m.app !== 'string') m.app = '';
+    if (!Array.isArray(m.tags)) m.tags = [];
+    if (!isPlainObject(obj.body)) obj.body = freshBody(obj.type);
+    return obj;
+  }
+  class LoadError extends Error { constructor(m, d) { super(m); this.name = 'LoadError'; this.detail = d; } }
+  function parse(text, opts = {}) {
+    let raw; try { raw = JSON.parse(text); } catch (e) { throw new LoadError('File is not valid JSON.', e.message); }
+    let r = validate(raw), obj = raw;
+    if (!r.ok && typeof opts.coerce === 'function') { const c = opts.coerce(raw); if (isPlainObject(c)) { obj = c; r = validate(obj); } }
+    if (!r.ok) throw new LoadError('Not a LocalOffice file: ' + r.errors.join(' '), r.errors);
+    normalize(obj); return { envelope: obj, warnings: r.warnings };
+  }
+  function stringify(env, pretty = true) { return JSON.stringify(env, null, pretty ? 2 : 0); }
+  function serialize(env, opts = {}) {
+    if (!isPlainObject(env)) throw new Error('serialize: not an object');
+    const r = validate(env); if (!r.ok) throw new Error('serialize: invalid - ' + r.errors.join(' '));
+    if (opts.touch !== false) { if (!isPlainObject(env.meta)) env.meta = {}; env.meta.modified = nowISO(); }
+    return stringify(env, opts.pretty !== false);
+  }
+  function slugify(s) { return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); }
+  function suggestedName(env) { return (slugify(env && env.meta && env.meta.title) || (env && env.type) || 'untitled') + FILE_EXT; }
+  function supportsFS() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; }
+  const PICKER_TYPES = [{ description: 'LocalOffice file', accept: { 'application/json': ['.json'] } }];
+  function pickFileFallback() { return new Promise((res, rej) => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json'; i.style.display = 'none'; i.addEventListener('change', () => { const f = i.files && i.files[0]; i.remove(); f ? res(f) : rej(new Error('No file selected.')); }); document.body.appendChild(i); i.click(); }); }
+  function isEmbedded() { return typeof window !== 'undefined' && window.parent && window.parent !== window; }
+  function hubSave(text, name, asNew) {
+    return new Promise((resolve, reject) => {
+      const id = 'lo' + Math.random().toString(36).slice(2);
+      function on(e) { const m = e.data; if (!m || m.proto !== 'localoffice' || m.type !== 'saved' || m.id !== id) return; window.removeEventListener('message', on); if (m.ok) resolve({ handle: null, name: m.name || name }); else if (m.error === 'cancelled') { const a = new Error('cancelled'); a.name = 'AbortError'; reject(a); } else reject(new Error(m.error || 'Save failed')); }
+      window.addEventListener('message', on);
+      window.parent.postMessage({ proto: 'localoffice', type: 'save', id, text, name, asNew: !!asNew }, '*');
+    });
+  }
+  async function openFile(opts = {}) {
+    if (supportsFS()) {
+      try { const [h] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false }); const f = await h.getFile(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: h, name: f.name, warnings }; }
+      catch (e) { if (e && e.name === 'AbortError') throw e; }
+    }
+    const f = await pickFileFallback(); const { envelope, warnings } = parse(await f.text(), opts); return { envelope, handle: null, name: f.name, warnings };
+  }
+  async function saveFile(env, handle, opts = {}) {
+    const text = serialize(env, opts);
+    if (isEmbedded()) return hubSave(text, suggestedName(env), false);
+    if (handle && typeof handle.createWritable === 'function') { const w = await handle.createWritable(); await w.write(text); await w.close(); return { handle, name: handle.name }; }
+    return saveFileAs(env, suggestedName(env), { ...opts, _text: text });
+  }
+  async function saveFileAs(env, suggested, opts = {}) {
+    const text = opts._text != null ? opts._text : serialize(env, opts); const name = suggested || suggestedName(env);
+    if (isEmbedded()) return hubSave(text, name, true);
+    if (supportsFS()) { const h = await window.showSaveFilePicker({ suggestedName: name, types: PICKER_TYPES }); const w = await h.createWritable(); await w.write(text); await w.close(); return { handle: h, name: h.name }; }
+    download(text, name); return { handle: null, name };
+  }
+  function download(text, filename) { const b = new Blob([text], { type: 'application/json' }), u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || ('untitled' + FILE_EXT); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 0); }
+  return { FORMAT, FILE_EXT, TYPES, uuid, createEnvelope, validate, normalize, parse, stringify, serialize, slugify, suggestedName, LoadError, supportsFS, openFile, saveFile, saveFileAs, download };
+})();
+
+// ════════════════════════════════════════════════════════════════════
+// localMark - state + helpers
+// ════════════════════════════════════════════════════════════════════
+const APP = 'localmark@1.0';
+const THEME_KEY = 'localmark_theme';
+const MAX_IMG_DIM = 1600, IMG_QUALITY = 0.85;
+
+let data = { base: '', width: 0, height: 0, overlays: [] };  // body (source of truth)
+let title = 'Untitled image';
+let fileHandle = null;
+let baseImg = null;          // Image element holding data.base
+let tool = 'redact';
+let dirty = false;
+
+const $ = id => document.getElementById(id);
+function setStatus(m, err) { const s = $('status'); s.textContent = m || ''; s.classList.toggle('err', !!err); }
+function markDirty() { dirty = true; }
+
+// images: re-encode through a <canvas> → strips EXIF/GPS/metadata + downscales
+function processImageFile(file, maxDim = MAX_IMG_DIM) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (!w || !h) return reject(new Error('Unsupported image'));
+        const scale = Math.min(1, maxDim / Math.max(w, h));
+        w = Math.round(w * scale); h = Math.round(h * scale);
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        const keepAlpha = /png|webp|gif/i.test(file.type || '');
+        resolve(cv.toDataURL(keepAlpha ? 'image/png' : 'image/jpeg', IMG_QUALITY)); // canvas output carries NO source metadata
+      };
+      img.onerror = () => reject(new Error('Could not decode image'));
+      img.src = fr.result;
+    };
+    fr.onerror = () => reject(new Error('Could not read file'));
+    fr.readAsDataURL(file);
+  });
+}
+function loadBase() {
+  return new Promise(resolve => {
+    if (!data.base) { baseImg = null; return resolve(); }
+    const im = new Image();
+    im.onload = () => { baseImg = im; data.width = im.naturalWidth; data.height = im.naturalHeight; resolve(); };
+    im.onerror = () => { baseImg = null; resolve(); };
+    im.src = data.base;
+  });
+}
+async function setImageFromFile(file) {
+  if (!file || (file.type || '').indexOf('image') !== 0) return;
+  try {
+    data = { base: await processImageFile(file), width: 0, height: 0, overlays: [] };
+    await loadBase(); markDirty(); render();
+    setStatus('Imported · metadata stripped, ' + data.width + '×' + data.height);
+  } catch (e) { setStatus('Import failed: ' + e.message, true); }
+}
+
+// ── editing operations (UI handlers call these; tests call them directly) ──
+// Redaction is DESTRUCTIVE: the pixels under the box are erased from the raster.
+async function bakeRedaction(box) {
+  if (!baseImg || box.w < 2 || box.h < 2) return;
+  const cv = document.createElement('canvas'); cv.width = data.width; cv.height = data.height;
+  const ctx = cv.getContext('2d'); ctx.drawImage(baseImg, 0, 0);
+  // Snap the blackout to WHOLE pixels. Box coords are fractional whenever the image
+  // is scaled to fit (the normal case), and a fractional fillRect ANTIALIASES its
+  // edge - leaving a partial-alpha blend of the original along the boundary ring
+  // (recoverable by contrast). Expanding to the enclosing integer rect erases every
+  // partially-covered pixel fully; over-erasing by <1px is the correct direction for
+  // a destructive redaction.
+  const x0 = Math.floor(box.x), y0 = Math.floor(box.y);
+  const x1 = Math.ceil(box.x + box.w), y1 = Math.ceil(box.y + box.h);
+  ctx.fillStyle = '#000'; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  data.base = cv.toDataURL('image/png');
+  await loadBase();
+  data.overlays.push({ type: 'redaction', x: box.x, y: box.y, w: box.w, h: box.h });
+  markDirty(); render(); setStatus('Redacted - those pixels are now erased.');
+}
+function addArrow(a) { data.overlays.push({ type: 'arrow', x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, label: a.label || '' }); markDirty(); render(); }
+function setWatermark(text) {
+  data.overlays = data.overlays.filter(o => o.type !== 'watermark');
+  if (text && text.trim()) data.overlays.push({ type: 'watermark', text: text.trim() });
+  markDirty(); render();
+}
+function undoOverlay() {
+  for (let i = data.overlays.length - 1; i >= 0; i--) {
+    if (data.overlays[i].type !== 'redaction') { data.overlays.splice(i, 1); markDirty(); render(); return; }
+  }
+  setStatus('Nothing to undo (redactions are permanent).');
+}
+function addWatermark() { const t = prompt('Watermark text (blank to remove):', currentWatermark() || 'CONFIDENTIAL - DO NOT DISTRIBUTE'); if (t !== null) setWatermark(t); }
+function currentWatermark() { const w = data.overlays.find(o => o.type === 'watermark'); return w ? w.text : ''; }
+function currentQR() { const q = data.overlays.find(o => o.type === 'qr'); return q ? q.value : ''; }
+function addQR() {
+  if (!baseImg) { setStatus('Import an image first.', true); return; }
+  const v = prompt('QR content (asset tag, calibration URL, …) - blank to remove:', currentQR() || '');
+  if (v === null) return;
+  data.overlays = data.overlays.filter(o => o.type !== 'qr');   // one QR overlay at a time
+  if (v.trim()) {
+    try { QR.encode(v.trim()); } catch (e) { setStatus('QR: ' + e.message, true); return; }
+    const size = Math.max(64, Math.round(Math.min(data.width, data.height) * 0.22));
+    data.overlays.push({ type: 'qr', x: Math.max(0, data.width - size - 12), y: Math.max(0, data.height - size - 12), size, value: v.trim() });
+  }
+  markDirty(); render(); setStatus(v.trim() ? 'QR added (bottom-right).' : 'QR removed.');
+}
+
+// ── dimensional calibration (pure metrology, no AI) ──────────────────
+// Calibrate maps pixels → real units from a known feature; Measure overlays
+// then report real-world distance. data.scale = { unit, perPixel } (real units
+// per image pixel). All arithmetic - never an LLM, never a network call.
+function parseLen(str) {
+  const m = String(str == null ? '' : str).trim().match(/(-?\d+(?:\.\d+)?)\s*([a-zµ"']*)/i);
+  if (!m) return null;
+  const val = parseFloat(m[1]); if (!isFinite(val) || val <= 0) return null;
+  let unit = (m[2] || 'mm').toLowerCase();
+  const map = { '"': 'in', "'": 'ft', 'inch': 'in', 'inches': 'in', 'micron': 'µm', 'microns': 'µm', 'um': 'µm' };
+  if (map[unit]) unit = map[unit];
+  return { val, unit: unit || 'mm' };
+}
+function setScale(real, unit, pxLen) {
+  if (!(pxLen > 0)) return;
+  data.scale = { unit, perPixel: real / pxLen };
+  markDirty(); render();
+  setStatus('Calibrated · 1 px = ' + (real / pxLen).toPrecision(3) + ' ' + unit + ' - drag Measure to read dimensions.');
+}
+function lineLenImg(o) { return Math.hypot(o.x2 - o.x1, o.y2 - o.y1); }
+function fmtLen(px) {
+  if (!data.scale || !(data.scale.perPixel > 0)) return Math.round(px) + ' px';
+  const v = px * data.scale.perPixel, u = data.scale.unit || 'mm';
+  const prec = v < 10 ? 2 : (v < 100 ? 1 : 0);
+  return v.toFixed(prec) + ' ' + u;
+}
+
+// ── rendering ─────────────────────────────────────────────────────────
+function drawMeasure(ctx, o, scale) {
+  const x1 = o.x1 * scale, y1 = o.y1 * scale, x2 = o.x2 * scale, y2 = o.y2 * scale;
+  ctx.strokeStyle = '#1f7a8c'; ctx.fillStyle = '#1f7a8c'; ctx.lineWidth = Math.max(1.5, 2 * scale);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  const ang = Math.atan2(y2 - y1, x2 - x1), t = Math.max(5, 8 * scale), px = Math.cos(ang + Math.PI / 2), py = Math.sin(ang + Math.PI / 2);
+  [[x1, y1], [x2, y2]].forEach(p => { ctx.beginPath(); ctx.moveTo(p[0] - px * t, p[1] - py * t); ctx.lineTo(p[0] + px * t, p[1] + py * t); ctx.stroke(); });
+  const label = fmtLen(lineLenImg(o)), fs = Math.max(12, 15 * scale);
+  ctx.font = fs + 'px system-ui, sans-serif';
+  const tw = ctx.measureText(label).width, mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(mx - tw / 2 - 4, my - fs - 4, tw + 8, fs + 6);
+  ctx.fillStyle = '#fff'; ctx.fillText(label, mx - tw / 2, my - 6);
+}
+function drawArrow(ctx, x1, y1, x2, y2, label, scale) {
+  ctx.strokeStyle = '#e23b3b'; ctx.fillStyle = '#e23b3b'; ctx.lineWidth = Math.max(2, 3 * scale);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  const ang = Math.atan2(y2 - y1, x2 - x1), head = Math.max(9, 14 * scale);
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * Math.cos(ang - 0.4), y2 - head * Math.sin(ang - 0.4));
+  ctx.lineTo(x2 - head * Math.cos(ang + 0.4), y2 - head * Math.sin(ang + 0.4));
+  ctx.closePath(); ctx.fill();
+  if (label) {
+    ctx.font = Math.max(12, 16 * scale) + 'px system-ui, sans-serif';
+    const tw = ctx.measureText(label).width, px = x1, py = y1 - 6;
+    ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(px - 3, py - Math.max(12, 16 * scale), tw + 6, Math.max(14, 18 * scale) + 2);
+    ctx.fillStyle = '#fff'; ctx.fillText(label, px, py - 3);
+  }
+}
+function drawWatermark(ctx, w, h, text) {
+  ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = '#000'; ctx.translate(w / 2, h / 2); ctx.rotate(-Math.atan2(h, w));
+  ctx.font = Math.max(16, w / 18) + 'px system-ui, sans-serif'; ctx.textAlign = 'center';
+  const step = Math.max(60, w / 5);
+  for (let y = -h; y < h; y += step) for (let x = -w; x < w; x += ctx.measureText(text).width + step) ctx.fillText(text, x, y);
+  ctx.restore();
+}
+function drawQR(ctx, o, scale) {
+  let m; try { m = QR.encode(o.value); } catch (e) { return; }
+  const S = o.size * scale, x0 = o.x * scale, y0 = o.y * scale, n = m.size, q = 4, mp = S / (n + 2 * q);
+  ctx.fillStyle = '#fff'; ctx.fillRect(x0, y0, S, S);
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (m.mods[r][c]) ctx.fillRect(x0 + (c + q) * mp, y0 + (r + q) * mp, mp + 0.6, mp + 0.6);
+}
+function drawOverlays(ctx, scale, forExport) {
+  data.overlays.forEach(o => {
+    if (o.type === 'redaction') {
+      if (!forExport) { ctx.strokeStyle = 'rgba(220,60,60,.9)'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5; ctx.strokeRect(o.x * scale, o.y * scale, o.w * scale, o.h * scale); ctx.setLineDash([]); }
+    } else if (o.type === 'arrow') {
+      drawArrow(ctx, o.x1 * scale, o.y1 * scale, o.x2 * scale, o.y2 * scale, o.label, scale);
+    } else if (o.type === 'measure') {
+      drawMeasure(ctx, o, scale);
+    } else if (o.type === 'watermark') {
+      drawWatermark(ctx, ctx.canvas.width, ctx.canvas.height, o.text);
+    } else if (o.type === 'qr') {
+      drawQR(ctx, o, scale);
+    }
+  });
+}
+let viewScale = 1;
+function render() {
+  const cv = $('view'), wrap = $('canvas-wrap');
+  if (!baseImg) { cv.classList.add('hidden'); $('empty').classList.remove('hidden'); $('title').value = title; return; }
+  $('empty').classList.add('hidden'); cv.classList.remove('hidden');
+  const availW = Math.max(80, wrap.clientWidth - 44), availH = Math.max(80, wrap.clientHeight - 44);
+  viewScale = Math.min(availW / data.width, availH / data.height, 1) || 1;
+  cv.width = Math.max(1, Math.round(data.width * viewScale)); cv.height = Math.max(1, Math.round(data.height * viewScale));
+  const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(baseImg, 0, 0, cv.width, cv.height);
+  drawOverlays(ctx, viewScale, false);
+  if (dragShape) drawDrag(ctx);
+  $('title').value = title;
+}
+
+// ── pointer drawing (redact / arrow) ──────────────────────────────────
+let dragShape = null;
+function toImg(e) { const r = $('view').getBoundingClientRect(); return { x: (e.clientX - r.left) / viewScale, y: (e.clientY - r.top) / viewScale }; }
+function drawDrag(ctx) {
+  const s = viewScale, d = dragShape;
+  if (d.tool === 'redact') { ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(d.x1 * s, d.y1 * s, (d.x2 - d.x1) * s, (d.y2 - d.y1) * s); }
+  else if (d.tool === 'arrow') { drawArrow(ctx, d.x1 * s, d.y1 * s, d.x2 * s, d.y2 * s, '', s); }
+  else if (d.tool === 'measure') { drawMeasure(ctx, { x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2 }, s); }
+  else if (d.tool === 'calibrate') { ctx.strokeStyle = '#c08a2f'; ctx.lineWidth = Math.max(1.5, 2 * s); ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(d.x1 * s, d.y1 * s); ctx.lineTo(d.x2 * s, d.y2 * s); ctx.stroke(); ctx.setLineDash([]); }
+}
+$('view').addEventListener('mousedown', e => {
+  if (!baseImg || tool === 'select') return;
+  const p = toImg(e); dragShape = { tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+  function mm(ev) { const q = toImg(ev); dragShape.x2 = q.x; dragShape.y2 = q.y; render(); }
+  function mu() {
+    document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu);
+    const d = dragShape; dragShape = null;
+    if (d.tool === 'redact') {
+      const box = { x: Math.min(d.x1, d.x2), y: Math.min(d.y1, d.y2), w: Math.abs(d.x2 - d.x1), h: Math.abs(d.y2 - d.y1) };
+      if (box.w >= 3 && box.h >= 3 && confirm('Redact this region? The pixels under it are erased permanently.')) bakeRedaction(box);
+      else render();
+    } else if (d.tool === 'arrow') {
+      if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) >= 6) { const label = (prompt('Arrow label (optional):') || '').trim(); addArrow({ x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2, label }); }
+      else render();
+    } else if (d.tool === 'calibrate') {
+      const pxLen = Math.hypot(d.x2 - d.x1, d.y2 - d.y1);
+      if (pxLen >= 5) {
+        const ans = prompt('Real length of this line (e.g. "1.0 mm", "5 cm", "0.4 in"):', '1 mm');
+        if (ans !== null) { const p = parseLen(ans); if (p) setScale(p.val, p.unit, pxLen); else { setStatus('Couldn\'t read a length from "' + ans + '".', true); render(); } }
+        else render();
+      } else { setStatus('Draw the line right across the known feature, then enter its real length.', true); render(); }
+    } else if (d.tool === 'measure') {
+      const o = { type: 'measure', x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2 };
+      if (lineLenImg(o) >= 6) { data.overlays.push(o); markDirty(); render(); setStatus(data.scale ? 'Measured: ' + fmtLen(lineLenImg(o)) : 'Measured (uncalibrated - set a scale with Calibrate).'); }
+      else render();
+    }
+  }
+  document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+});
+
+// ── export PNG (flat, metadata-free) ──────────────────────────────────
+// Composites base (with redactions already baked in) + overlays at full res.
+function compositePNG() {
+  if (!baseImg) return '';
+  const cv = document.createElement('canvas'); cv.width = data.width; cv.height = data.height;
+  const ctx = cv.getContext('2d'); ctx.drawImage(baseImg, 0, 0); drawOverlays(ctx, 1, true);
+  return cv.toDataURL('image/png');
+}
+function exportPNG() {
+  if (!baseImg) { setStatus('Nothing to export.', true); return; }
+  const url = compositePNG();
+  const a = document.createElement('a'); a.href = url; a.download = (LocalOffice.slugify(title) || 'image') + '.png';
+  document.body.appendChild(a); a.click(); a.remove();
+  setStatus('Exported a flat PNG (no metadata).');
+}
+
+// ── envelope IO ───────────────────────────────────────────────────────
+function exportData() { return LocalOffice.createEnvelope('image', { title: title || 'Untitled image', app: APP, body: data }); }
+function importData(env) { data = env.body; if (!Array.isArray(data.overlays)) data.overlays = []; title = (env.meta && env.meta.title) || 'Untitled image'; }
+async function applyOpened(env) {
+  if (env.type !== 'image') throw new Error('Not an image file ("' + env.type + '")');
+  importData(env); await loadBase(); fileHandle = null; dirty = false; render();
+}
+function newMark() {
+  if (dirty && !confirm('Discard the current image?')) return;
+  data = { base: '', width: 0, height: 0, overlays: [] }; title = 'Untitled image'; baseImg = null; fileHandle = null; dirty = false;
+  render(); setStatus('New');
+}
+async function openMark() {
+  try {
+    const res = await LocalOffice.openFile();
+    if (res.envelope.type !== 'image') { setStatus('That is a "' + res.envelope.type + '" file, not an image.', true); return; }
+    importData(res.envelope); await loadBase(); fileHandle = res.handle; dirty = false; render();
+    setStatus('Opened ' + res.name);
+  } catch (e) { if (e && e.name !== 'AbortError') setStatus('Open failed: ' + e.message, true); }
+}
+async function saveMark() {
+  try { const res = await LocalOffice.saveFile(exportData(), fileHandle); fileHandle = res.handle; dirty = false; setStatus('Saved' + (res.name ? ' · ' + res.name : '')); }
+  catch (e) { if (e && e.name !== 'AbortError') setStatus('Save failed: ' + e.message, true); }
+}
+async function saveMarkAs() {
+  try { const env = exportData(); const res = await LocalOffice.saveFileAs(env, LocalOffice.suggestedName(env)); fileHandle = res.handle; dirty = false; setStatus('Saved · ' + res.name); }
+  catch (e) { if (e && e.name !== 'AbortError') setStatus('Save failed: ' + e.message, true); }
+}
+
+// ── import wiring (picker / drag / paste) ─────────────────────────────
+function importImage() { $('file-input').click(); }
+$('file-input').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) setImageFromFile(f); });
+$('canvas-wrap').addEventListener('dragover', e => { e.preventDefault(); });
+$('canvas-wrap').addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) setImageFromFile(f); });
+document.addEventListener('paste', e => {
+  const ae = document.activeElement; if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  for (const it of items) { if (it.type && it.type.indexOf('image') === 0) { const f = it.getAsFile(); if (f) { e.preventDefault(); setImageFromFile(f); } return; } }
+});
+
+// ── tool select ───────────────────────────────────────────────────────
+function setTool(t) {
+  tool = t;
+  document.body.classList.toggle('tool-select', t === 'select');
+  $('t-redact').classList.toggle('on', t === 'redact');
+  $('t-arrow').classList.toggle('on', t === 'arrow');
+  $('t-calibrate').classList.toggle('on', t === 'calibrate');
+  $('t-measure').classList.toggle('on', t === 'measure');
+}
+$('title').addEventListener('input', e => { title = e.target.value || 'Untitled image'; markDirty(); });
+
+// ── theme ─────────────────────────────────────────────────────────────
+function applyTheme() {
+  let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) {}
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = s === 'dark' || (s === null && prefersDark);
+  document.body.classList.toggle('dark', isDark); document.body.classList.toggle('light', !isDark);
+  $('theme-btn').textContent = isDark ? '☀' : '☾';
+  const mc = document.querySelector('meta[name="theme-color"]'); if (mc) mc.content = isDark ? '#1a1a17' : '#fafaf7';
+}
+function toggleTheme() { const d = document.body.classList.contains('dark'); try { localStorage.setItem(THEME_KEY, d ? 'light' : 'dark'); } catch (e) {} applyTheme(); }
+window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) {} if (s === null) applyTheme(); });
+
+// ── keyboard ──────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const ae = document.activeElement, inField = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA');
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveMark(); return; }
+  if (inField) return;
+  if (e.key === 'r' || e.key === 'R') setTool('redact');
+  else if (e.key === 'a' || e.key === 'A') setTool('arrow');
+  else if (e.key === 'm' || e.key === 'M') setTool('measure');
+  else if (e.key === 'c' || e.key === 'C') setTool('calibrate');
+});
+window.addEventListener('resize', () => { if (baseImg) render(); });
+
+// ── embed: opened inside the LocalOffice Hub ──────────────────────────
+window.addEventListener('message', async e => {
+  const m = e.data; if (!m || m.proto !== 'localoffice') return;
+  if (m.type === 'open-handle') { if (m.handle) fileHandle = m.handle; return; }
+  if (m.type !== 'open') return;
+  try {
+    let t = m.text, h = m.handle || null;
+    if (h && t == null) t = await (await h.getFile()).text();
+    await applyOpened(LocalOffice.parse(t).envelope);
+    if (h) fileHandle = h;
+    (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: true }, '*');
+  } catch (err) { (e.source || window.parent).postMessage({ proto: 'localoffice', type: 'opened', ok: false, error: String(err && err.message || err) }, '*'); }
+});
+
+// ── boot ──────────────────────────────────────────────────────────────
+applyTheme();
+setTool('redact');
+render();
+// ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
+const JsonPanel = (function () {
+  'use strict';
+  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  function build() {
+    const s = document.createElement('style');
+    s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
+    document.head.appendChild(s);
+    host = document.createElement('div'); host.id = 'jp';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    document.body.appendChild(host);
+    ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
+    const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
+    on('x', hide);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
+    on('apply', apply);
+    host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
+    document.addEventListener('keydown', e => { if (host.classList.contains('on') && e.key === 'Escape') hide(); });
+  }
+  function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
+  function hide() { host.classList.remove('on'); }
+  function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
+  async function apply() {
+    try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
+    catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
+  }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function init(h) {
+    hooks = h; if (!host) build();
+    const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
+    const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
+    if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
+    else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
+    btn.addEventListener('click', open);
+  }
+  return { init, open };
+})();
+JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpened(LocalOffice.parse(t).envelope) });
+
+if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localMark' }, '*');
+</script>
+</body>
+</html>

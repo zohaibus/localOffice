@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<!-- ════════════════════════════════════════════════════════════════════
+     LocalOffice.html - the Hub
+     The cohesion layer for the suite: start a new document, or pick a workspace
+     folder and scan every *.localoffice.json (reading meta only) into a unified
+     dashboard, then open a file by loading its owning tool in an iframe - handing
+     it the file handle via postMessage so the tool saves back in place.
+
+     Single file · no dependencies · no build step · fully offline.
+     The only network call anywhere in LocalOffice is each tool's optional
+     local-Ollama AI panel; the Hub itself makes none.
+     MIT.
+     ════════════════════════════════════════════════════════════════════ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#fafaf7">
+<meta name="description" content="LocalOffice: single-file, local-first office tools that share one JSON format. Fully offline, no dependencies, no accounts. Pick a workspace folder and open each file in the right tool.">
+<title>LocalOffice</title>
+<style>
+  :root {
+    --bg:#fafaf7; --surface:#fff; --surface-2:#f4f3ee; --ink:#1a1a17; --ink-2:#5a5a55;
+    --ink-3:#8a8a83; --border:rgba(0,0,0,.08); --border-strong:rgba(0,0,0,.14);
+    --accent:#5a4a2f; --accent-soft:#f0e9d8; --radius:10px; --radius-sm:6px;
+    --shadow:0 1px 2px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.05); --shadow-lg:0 10px 40px rgba(0,0,0,.12);
+    --t-slides:#3b6ef6; --t-flashcards:#7a4fd0; --t-sheet:#2f8f4e; --t-plan:#b8862a; --t-mindmap:#c2410c;
+    --t-image:#0d9488; --t-runbook:#9333ea; --t-doc:#475569; --t-unknown:#8a8a83;
+    color-scheme: light;
+  }
+  body.dark {
+    --bg:#1a1a17; --surface:#242420; --surface-2:#2c2c27; --ink:#f0ede6; --ink-2:#b5b1a8;
+    --ink-3:#807c73; --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.16);
+    --accent:#c4a265; --accent-soft:#3a3320; color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* `hidden` must win over our display rules (e.g. .menu/.grid set display) */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+         background: var(--bg); color: var(--ink); display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: center; gap: 8px; padding: 11px 18px;
+           background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .brand { font-weight: 800; font-size: 16px; letter-spacing: .2px; margin-right: 6px; }
+  .brand b { color: var(--accent); }
+  .spacer { flex: 1; }
+  button, select, input[type=text] {
+    font: inherit; font-size: 13px; line-height: 1.1; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 8px 12px; cursor: pointer;
+    transition: border-color .12s, background .12s, filter .12s;
+  }
+  input[type=text] { cursor: text; min-width: 160px; }
+  button:hover, select:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.icon { padding: 8px 10px; }
+  .count { color: var(--ink-2); font-size: 12px; }
+
+  main { flex: 1; overflow: auto; padding: 26px 22px 40px; }
+
+  /* ── landing / empty state (one consistent left-aligned column) ── */
+  .empty { max-width: 760px; margin: 6vh auto 0; color: var(--ink-2); }
+  .empty h1 { color: var(--ink); font-size: 23px; margin-bottom: 8px; font-weight: 800; letter-spacing: -.2px; }
+  .empty .lead { margin: 0; line-height: 1.65; font-size: 14px; max-width: 64ch; }
+  .empty code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px;
+                padding: 1px 5px; font-size: 12px; }
+  .choose { margin-top: 32px; display: flex; flex-direction: column; gap: 30px; }
+  .choose h2 { font-size: 11px; color: var(--ink-3); font-weight: 700; text-transform: uppercase;
+               letter-spacing: .7px; margin-bottom: 13px; }
+  .note { font-size: 12px; color: var(--ink-3); margin-top: 11px; line-height: 1.55; max-width: 64ch; }
+
+  /* ── "New <type>" chooser (landing grid + header popover) ── */
+  .newgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; }
+  .newbtn { display: flex; align-items: center; gap: 11px; padding: 11px 13px; width: 100%;
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            cursor: pointer; text-align: left; transition: border-color .12s, background .12s, transform .06s; }
+  .newbtn:hover { border-color: var(--accent); background: var(--surface-2); transform: translateY(-1px); }
+  .nb-dot { width: 11px; height: 11px; border-radius: 3px; background: var(--bc, var(--ink-3)); flex: none; }
+  .nb-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .nb-label { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+  .nb-tool { color: var(--ink-3); font-size: 11.5px; }
+  .new-wrap { position: relative; display: inline-flex; }
+  .menu { position: absolute; top: calc(100% + 8px); left: 0; z-index: 200; width: 244px;
+          background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius);
+          box-shadow: var(--shadow-lg); padding: 6px; display: flex; flex-direction: column; gap: 1px; }
+  .menu .newbtn { border-color: transparent; padding: 9px 10px; }
+  .menu .newbtn:hover { background: var(--surface-2); border-color: transparent; transform: none; }
+
+  /* ── dashboard cards ── */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(244px, 1fr)); gap: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+          box-shadow: var(--shadow); padding: 15px; cursor: pointer; display: flex; flex-direction: column; gap: 9px;
+          transition: border-color .12s, transform .06s, box-shadow .12s; }
+  .card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+  .card .top { display: flex; align-items: center; gap: 8px; }
+  .badge { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 9px; white-space: nowrap;
+           background: color-mix(in srgb, var(--bc, var(--t-unknown)) 16%, transparent); color: var(--bc, var(--t-unknown)); }
+  .b-slides{--bc:var(--t-slides)} .b-flashcards{--bc:var(--t-flashcards)} .b-sheet{--bc:var(--t-sheet)}
+  .b-plan{--bc:var(--t-plan)} .b-mindmap{--bc:var(--t-mindmap)} .b-image{--bc:var(--t-image)}
+  .b-runbook{--bc:var(--t-runbook)} .b-doc{--bc:var(--t-doc)} .b-unknown{--bc:var(--t-unknown)}
+  .card .title { font-weight: 700; font-size: 15px; line-height: 1.3; word-break: break-word; color: var(--ink); }
+  .card .meta { font-size: 12px; color: var(--ink-2); }
+  .card .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .card .tag { font-size: 11px; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border);
+               border-radius: 999px; padding: 1px 8px; }
+  .card.bad { opacity: .7; }
+  .card .err { font-size: 12px; color: var(--t-mindmap); }
+
+  /* viewer overlay (the iframe shell) */
+  #viewer { position: fixed; inset: 0; background: var(--bg); z-index: 100; display: none; flex-direction: column; }
+  #viewer.on { display: flex; }
+  #vbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+          background: var(--surface); border-bottom: 1px solid var(--border); }
+  #vbar .vtitle { font-weight: 700; }
+  #vbar .vtool { color: var(--ink-2); font-size: 12px; }
+  #vbar .verr { color: var(--t-mindmap); font-size: 12px; }
+  #vframe { flex: 1; border: 0; width: 100%; background: var(--bg); }
+</style>
+</head>
+<body class="light">
+
+<header>
+  <span class="brand">Local<b>Office</b></span>
+  <span class="new-wrap">
+    <button id="btn-new" class="primary">+ New</button>
+    <div id="new-menu" class="menu" hidden></div>
+  </span>
+  <button id="btn-pick">Open workspace folder</button>
+  <button id="btn-files" class="icon" title="Choose files (Firefox/Safari)">Files…</button>
+  <button id="btn-refresh" class="icon" title="Rescan the workspace" hidden>↻</button>
+  <span class="spacer"></span>
+  <input type="text" id="q" placeholder="Search title / tag…" hidden>
+  <select id="f-type" hidden><option value="">All types</option></select>
+  <select id="f-tag" hidden><option value="">All tags</option></select>
+  <select id="f-sort" hidden>
+    <option value="recent">Recent</option>
+    <option value="title">Title</option>
+    <option value="type">Type</option>
+  </select>
+  <span class="count" id="count"></span>
+  <button class="icon" id="btn-theme" title="Light / dark">☾</button>
+</header>
+
+<main>
+  <div class="empty" id="empty">
+    <h1>Your local workspace</h1>
+    <p class="lead">Start a new document, or open the folder where your <code>*.localoffice.json</code>
+       files live. The Hub reads only each file's title, type, and tags - nothing leaves
+       your machine - and opens the right tool for each one.</p>
+    <div class="choose">
+      <section>
+        <h2>Start something new</h2>
+        <div class="newgrid" id="newgrid"></div>
+      </section>
+      <section>
+        <h2>Open an existing workspace</h2>
+        <button id="btn-pick-2" class="primary">Open workspace folder</button>
+        <p class="note">Chrome / Edge open the folder in place. On Firefox / Safari use
+           <b>Files…</b> to pick files (they'll open read-then-download).</p>
+      </section>
+    </div>
+  </div>
+  <div class="grid" id="grid" hidden></div>
+</main>
+
+<div id="viewer">
+  <div id="vbar">
+    <button id="btn-back">← Workspace</button>
+    <span class="vtitle" id="vtitle"></span>
+    <span class="vtool" id="vtool"></span>
+    <span class="spacer"></span>
+    <span class="verr" id="verr"></span>
+  </div>
+  <iframe id="vframe" title="tool"></iframe>
+</div>
+
+<input type="file" id="file-input" accept=".json,application/json" multiple hidden>
+
+<script>
+// ── shared LocalOffice core (inlined verbatim; single-file rule) ──────
+const LocalOffice = (function () {
+  'use strict';
+  const FORMAT = 'localoffice/v1', FORMAT_PREFIX = 'localoffice/', FILE_EXT = '.localoffice.json';
+  const TYPES = ['sheet', 'plan', 'flashcards', 'mindmap', 'slides', 'image', 'runbook', 'doc'];
+  function nowISO() { return new Date().toISOString(); }
+  function uuid() {
+    const c = (typeof crypto !== 'undefined') ? crypto : null;
+    if (c && typeof c.randomUUID === 'function') { try { return c.randomUUID(); } catch (_) {} }
+    let rnd;
+    if (c && typeof c.getRandomValues === 'function') { const b = new Uint8Array(16); c.getRandomValues(b); b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80; rnd = (i) => b[i]; }
+    else { const a = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256)); a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80; rnd = (i) => a[i]; }
+    const h = []; for (let i = 0; i < 16; i++) h.push((rnd(i) + 0x100).toString(16).slice(1));
+    return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+  }
+  function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function validate(obj) {
+    const errors = [], warnings = [];
+    if (!isPlainObject(obj)) return { ok: false, errors: ['Not a JSON object.'], warnings, type: null };
+    if (typeof obj.format !== 'string') errors.push('Missing "format".');
+    else if (!obj.format.startsWith(FORMAT_PREFIX)) errors.push('Unrecognized format.');
+    if (typeof obj.type !== 'string' || !obj.type) errors.push('Missing "type".');
+    else if (!TYPES.includes(obj.type)) warnings.push('Unknown type "' + obj.type + '".');
+    if (!isPlainObject(obj.meta)) errors.push('Missing "meta".');
+    return { ok: errors.length === 0, errors, warnings, type: typeof obj.type === 'string' ? obj.type : null };
+  }
+  function parseMeta(text) {
+    let raw; try { raw = JSON.parse(text); } catch (e) { return { ok: false, error: 'Not valid JSON.' }; }
+    const r = validate(raw);
+    if (!r.ok) return { ok: false, error: r.errors.join(' '), type: r.type };
+    const m = isPlainObject(raw.meta) ? raw.meta : {};
+    return { ok: true, type: raw.type, title: typeof m.title === 'string' ? m.title : '',
+             tags: Array.isArray(m.tags) ? m.tags.filter(t => typeof t === 'string') : [],
+             modified: typeof m.modified === 'string' ? m.modified : '', app: typeof m.app === 'string' ? m.app : '' };
+  }
+  return { FORMAT, FILE_EXT, TYPES, uuid, validate, parseMeta };
+})();
+
+// ── tool registry: which single-file tool owns each body type ─────────
+const TOOLS = {
+  slides:     { name: 'localDeck',    file: 'localDeck/localDeck.html' },
+  flashcards: { name: 'localCards',   file: 'localCards/localCards.html' },
+  sheet:      { name: 'LocalSheets',  file: 'localSheets/localsheets.html' },
+  plan:       { name: 'LocalPlan',    file: 'localPlan/index.html' },
+  mindmap:    { name: 'localMindMap', file: 'localMindMap/index.html' },
+  image:      { name: 'localMark',    file: 'localMark/index.html' },
+  runbook:    { name: 'localCheck',   file: 'localCheck/index.html' },
+  doc:        { name: 'localDoc',     file: 'localDoc/index.html' },
+};
+function toolFor(type) { return TOOLS[type] || null; }
+// Order + plain-language labels for the "Start something new" chooser.
+const NEW_ITEMS = [
+  { type: 'sheet',      label: 'Spreadsheet' },
+  { type: 'doc',        label: 'Document' },
+  { type: 'plan',       label: 'Plan' },
+  { type: 'slides',     label: 'Slide deck' },
+  { type: 'flashcards', label: 'Flashcards' },
+  { type: 'mindmap',    label: 'Mind map' },
+  { type: 'runbook',    label: 'Runbook' },
+  { type: 'image',      label: 'Image / mark' },
+];
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ── state ────────────────────────────────────────────────────────────
+let index = [];          // [{ name, path, handle, text, lastModified, ok, type, title, tags, modified, error }]
+let pendingOpen = null;   // entry awaiting the iframe's "ready" (or a { isNew:true } session for a fresh doc)
+let workspaceDir = null;  // retained directory handle: lets new files default into the workspace + enables rescan
+
+// ── pure logic (exposed for tests) ────────────────────────────────────
+// Build the dashboard index from raw file records: { name, path, text, handle?, lastModified? }.
+function indexFiles(records) {
+  return records.map(rec => {
+    const meta = LocalOffice.parseMeta(rec.text);
+    const base = { name: rec.name, path: rec.path || rec.name, handle: rec.handle || null,
+                   text: rec.text, lastModified: rec.lastModified || 0 };
+    if (!meta.ok) return { ...base, ok: false, type: meta.type || 'unknown', title: rec.name, tags: [], modified: '', error: meta.error };
+    return { ...base, ok: true, type: meta.type, title: meta.title || rec.name, tags: meta.tags,
+             modified: meta.modified, app: meta.app, error: null };
+  });
+}
+function collectTags(list) { const s = new Set(); list.forEach(e => (e.tags || []).forEach(t => s.add(t))); return [...s].sort(); }
+function collectTypes(list) { const s = new Set(); list.forEach(e => s.add(e.type)); return [...s].sort(); }
+function sortKeyModified(e) { return e.modified || (e.lastModified ? new Date(e.lastModified).toISOString() : ''); }
+function filterSort(list, opts) {
+  opts = opts || {};
+  const q = (opts.query || '').trim().toLowerCase();
+  let out = list.filter(e => {
+    if (opts.type && e.type !== opts.type) return false;
+    if (opts.tag && !(e.tags || []).includes(opts.tag)) return false;
+    if (q) { const hay = (e.title + ' ' + (e.tags || []).join(' ') + ' ' + e.name).toLowerCase(); if (!hay.includes(q)) return false; }
+    return true;
+  });
+  const sort = opts.sort || 'recent';
+  out.sort((a, b) => {
+    if (sort === 'title') return (a.title || '').localeCompare(b.title || '');
+    if (sort === 'type') return (a.type || '').localeCompare(b.type || '') || (a.title || '').localeCompare(b.title || '');
+    return sortKeyModified(b).localeCompare(sortKeyModified(a)); // recent first
+  });
+  return out;
+}
+
+// ── workspace scanning (File System Access) ───────────────────────────
+async function pickWorkspace() {
+  if (!window.showDirectoryPicker) { $('file-input').click(); return; }
+  let dir;
+  try { dir = await window.showDirectoryPicker(); }
+  catch (e) {
+    if (e && e.name === 'AbortError') return;        // user cancelled - do nothing
+    $('file-input').click(); return;                 // picker blocked (e.g. over file://) - fall back to Files…
+  }
+  workspaceDir = dir;
+  await rescanWorkspace();
+}
+// Re-read the already-picked workspace folder (used by ↻ and after saving a new file).
+async function rescanWorkspace() {
+  if (!workspaceDir) return;
+  const records = [];
+  try { await scanDir(workspaceDir, '', records); } catch (e) { /* skip */ }
+  index = indexFiles(records);
+  renderDashboard();
+}
+async function scanDir(dir, prefix, out) {
+  for await (const entry of dir.values()) {
+    const path = prefix ? prefix + '/' + entry.name : entry.name;
+    if (entry.kind === 'file' && /\.localoffice\.json$/i.test(entry.name)) {
+      try { const f = await entry.getFile(); out.push({ name: entry.name, path, handle: entry, text: await f.text(), lastModified: f.lastModified }); }
+      catch (e) { /* skip unreadable */ }
+    } else if (entry.kind === 'directory') {
+      try { await scanDir(entry, path, out); } catch (e) { /* skip */ }
+    }
+  }
+}
+// Firefox/Safari fallback: read selected files (no handles → save will download).
+async function loadFiles(fileList) {
+  const records = [];
+  for (const f of fileList) { if (/\.json$/i.test(f.name)) records.push({ name: f.name, path: f.name, handle: null, text: await f.text(), lastModified: f.lastModified }); }
+  index = indexFiles(records);
+  renderDashboard();
+}
+
+// ── dashboard render ──────────────────────────────────────────────────
+function fillSelect(sel, values, allLabel) {
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">' + allLabel + '</option>' + values.map(v => '<option value="' + esc(v) + '">' + esc(v) + '</option>').join('');
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+function renderDashboard() {
+  const has = index.length > 0;
+  $('empty').hidden = has;
+  $('grid').hidden = !has;
+  ['q', 'f-type', 'f-tag', 'f-sort'].forEach(id => $(id).hidden = !has);
+  $('btn-refresh').hidden = !has;
+  if (!has) { $('count').textContent = ''; return; }
+  fillSelect($('f-type'), collectTypes(index), 'All types');
+  fillSelect($('f-tag'), collectTags(index), 'All tags');
+  renderGrid();
+}
+function renderGrid() {
+  const view = filterSort(index, { query: $('q').value, type: $('f-type').value, tag: $('f-tag').value, sort: $('f-sort').value });
+  $('count').textContent = view.length + ' of ' + index.length + ' file' + (index.length === 1 ? '' : 's');
+  $('grid').innerHTML = view.map((e, i) => {
+    const tool = toolFor(e.type);
+    const date = e.modified ? new Date(e.modified).toLocaleDateString() : (e.lastModified ? new Date(e.lastModified).toLocaleDateString() : '');
+    return '<div class="card' + (e.ok ? '' : ' bad') + '" data-i="' + index.indexOf(e) + '">' +
+      '<div class="top"><span class="badge b-' + (LocalOffice.TYPES.includes(e.type) ? e.type : 'unknown') + '">' + esc(e.type) + '</span>' +
+      '<span class="meta">' + esc(tool ? tool.name : 'no tool') + '</span></div>' +
+      '<div class="title">' + esc(e.title) + '</div>' +
+      (e.error ? '<div class="err">' + esc(e.error) + '</div>' : '') +
+      (e.tags && e.tags.length ? '<div class="tags">' + e.tags.map(t => '<span class="tag">' + esc(t) + '</span>').join('') + '</div>' : '') +
+      '<div class="meta">' + esc(e.path) + (date ? ' · ' + date : '') + '</div>' +
+    '</div>';
+  }).join('');
+  [...$('grid').querySelectorAll('.card')].forEach(card => card.addEventListener('click', () => openEntry(index[+card.dataset.i])));
+}
+
+// ── start a new document: load its tool blank ────────────────────────
+// Every tool boots its own fresh empty doc (and posts "ready") before it waits
+// for an "open". So a new doc just opens the iframe and sends NO "open" - the
+// tool shows its blank default. We keep an { isNew:true } session so the FIRST
+// Save shows a picker (defaulting into the workspace) and then ADOPTS that handle,
+// so subsequent saves write in place instead of re-prompting.
+function newDoc(type) {
+  const tool = toolFor(type);
+  if (!tool) { alert('No LocalOffice tool handles "' + type + '" files.'); return; }
+  pendingOpen = { isNew: true, type, handle: null, text: '', name: '', title: 'New ' + tool.name };
+  $('vtitle').textContent = 'New ' + tool.name;
+  $('vtool').textContent = tool.name;
+  $('verr').textContent = '';
+  $('viewer').classList.add('on');
+  $('vframe').src = tool.file;   // boots blank; we deliberately never send "open"
+}
+// Build the "New <type>" buttons into a container (the landing grid or the popover).
+function newButtonHTML(it) {
+  const tool = toolFor(it.type);
+  return '<button class="newbtn" data-type="' + it.type + '" title="New ' + esc(tool ? tool.name : it.type) + '">' +
+    '<span class="nb-dot b-' + it.type + '"></span>' +
+    '<span class="nb-text">' +
+      '<span class="nb-label">' + esc(it.label) + '</span>' +
+      '<span class="nb-tool">' + esc(tool ? tool.name : '') + '</span>' +
+    '</span>' +
+  '</button>';
+}
+function fillNew(container) {
+  if (!container) return;
+  container.innerHTML = NEW_ITEMS.map(newButtonHTML).join('');
+  [...container.querySelectorAll('.newbtn')].forEach(b =>
+    b.addEventListener('click', () => { $('new-menu').hidden = true; newDoc(b.dataset.type); }));
+}
+
+// ── open a file: load its tool in the iframe, hand it the file ────────
+function openEntry(entry) {
+  const tool = toolFor(entry.type);
+  if (!tool) { alert('No LocalOffice tool handles "' + entry.type + '" files.'); return; }
+  pendingOpen = entry;
+  $('vtitle').textContent = entry.title;
+  $('vtool').textContent = tool.name;
+  $('verr').textContent = '';
+  $('viewer').classList.add('on');
+  $('vframe').src = tool.file;   // onload / "ready" message triggers the handoff
+}
+// CRITICAL: the CONTENT (a plain string) goes in its own message - it always
+// deserializes, so the tool always loads. A FileSystemFileHandle in the SAME
+// message would make the WHOLE message undeserializable in a cross-origin iframe
+// (every file:// doc is its own opaque origin) → the receiver gets a
+// 'messageerror', not 'message', and the open is silently dropped. So the handle
+// goes in a SEPARATE, best-effort message: it only arrives when the suite is
+// HOSTED (same-origin), enabling in-place save; over file:// it's dropped and the
+// tool's Save simply falls back to Save As.
+function buildOpenMessages(entry) {
+  const msgs = [{ proto: 'localoffice', type: 'open', text: entry.text, name: entry.name }];
+  if (entry.handle) msgs.push({ proto: 'localoffice', type: 'open-handle', handle: entry.handle });
+  return msgs;
+}
+// Whether the current session has a file to hand to the tool. A new (blank) doc
+// has none - the tool keeps its own fresh default.
+function hasOpenable() { return !!(pendingOpen && !pendingOpen.isNew); }
+function sendOpen() {
+  if (!hasOpenable()) return;
+  const fr = $('vframe').contentWindow; if (!fr) return;
+  for (const msg of buildOpenMessages(pendingOpen)) { try { fr.postMessage(msg, '*'); } catch (e) {} }
+}
+// Leaving a tool: hide the dashboard overlay ONLY after the iframe has actually
+// unloaded. A tool with unsaved changes shows a native "Leave / Cancel" guard when
+// we navigate the frame to about:blank; if the user picks Cancel the navigation
+// aborts, no `load` fires, and we stay in the tool with the edit intact. (Before,
+// we removed the overlay first, so Cancel still dumped you to the workspace and the
+// dirty frame got stranded - reopening it then re-prompted.)
+function closeViewer() {
+  const fr = $('vframe');
+  fr.addEventListener('load', () => { $('viewer').classList.remove('on'); pendingOpen = null; }, { once: true });
+  fr.src = 'about:blank';
+}
+
+const HUB_PICKER_TYPES = [{ description: 'LocalOffice file', accept: { 'application/json': ['.json'] } }];
+// An embedded tool can't show a file picker (cross-origin subframe), so it
+// delegates saving to us - the TOP frame. We write to the handle we already hold
+// from the directory scan (true in-place save, even over file://), or show the
+// picker ourselves if we don't have one. Keep the dashboard's cached text in sync.
+async function handleSave(m, source) {
+  const reply = (ok, extra) => { try { source.postMessage(Object.assign({ proto: 'localoffice', type: 'saved', id: m.id, ok }, extra || {}), '*'); } catch (e) {} };
+  try {
+    // Save As (asNew) always shows the picker (new file); Save reuses the handle.
+    let h = m.asNew ? null : (pendingOpen && pendingOpen.handle);
+    const wasNew = !!(pendingOpen && pendingOpen.isNew);
+    if (!h || typeof h.createWritable !== 'function') {
+      const opts = { suggestedName: m.name || 'untitled.localoffice.json', types: HUB_PICKER_TYPES };
+      if (workspaceDir) opts.startIn = workspaceDir;   // default the picker into the open workspace
+      h = await window.showSaveFilePicker(opts);
+      if (pendingOpen) pendingOpen.handle = h; // adopt the new file for subsequent in-place saves
+    }
+    const w = await h.createWritable(); await w.write(m.text); await w.close();
+    if (pendingOpen) { pendingOpen.text = m.text; pendingOpen.isNew = false; } // now a real file - reuse handle next save
+    $('verr').textContent = '';
+    reply(true, { name: h.name });
+    if (wasNew) rescanWorkspace();   // the new file now exists - refresh the dashboard behind the viewer
+  } catch (err) {
+    const cancelled = err && err.name === 'AbortError';
+    if (!cancelled) $('verr').textContent = 'Save failed: ' + (err && err.message || err);
+    reply(false, { error: cancelled ? 'cancelled' : String(err && err.message || err) });
+  }
+}
+window.addEventListener('message', (e) => {
+  const m = e.data; if (!m || m.proto !== 'localoffice') return;
+  if (m.type === 'ready') { sendOpen(); }
+  else if (m.type === 'opened') { if (!m.ok) $('verr').textContent = 'Open failed: ' + (m.error || 'unknown'); }
+  else if (m.type === 'save') { handleSave(m, e.source); }
+});
+// Fallback if a tool predates the embed protocol: try once on iframe load.
+$('vframe').addEventListener('load', () => { if (pendingOpen) setTimeout(sendOpen, 60); });
+
+// ── theme ─────────────────────────────────────────────────────────────
+const THEME_KEY = 'localoffice_theme';
+function applyTheme() {
+  let s = null; try { s = localStorage.getItem(THEME_KEY); } catch (e) {}
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = s === 'dark' || (s === null && prefersDark);
+  document.body.classList.toggle('dark', isDark);
+  document.body.classList.toggle('light', !isDark);
+  $('btn-theme').textContent = isDark ? '☀' : '☾';
+  const mc = document.querySelector('meta[name="theme-color"]'); if (mc) mc.content = isDark ? '#1a1a17' : '#fafaf7';
+}
+function toggleTheme() { const d = document.body.classList.contains('dark'); try { localStorage.setItem(THEME_KEY, d ? 'light' : 'dark'); } catch (e) {} applyTheme(); }
+
+// ── wiring ────────────────────────────────────────────────────────────
+$('btn-pick').onclick = pickWorkspace;
+$('btn-pick-2').onclick = pickWorkspace;
+$('btn-files').onclick = () => $('file-input').click();
+$('btn-refresh').onclick = () => (workspaceDir ? rescanWorkspace() : pickWorkspace());
+$('btn-new').onclick = (e) => { e.stopPropagation(); const mn = $('new-menu'); mn.hidden = !mn.hidden; };
+document.addEventListener('click', () => { $('new-menu').hidden = true; });
+fillNew($('newgrid'));
+fillNew($('new-menu'));
+$('file-input').addEventListener('change', (e) => { if (e.target.files.length) loadFiles(e.target.files); e.target.value = ''; });
+$('btn-back').onclick = closeViewer;
+$('btn-theme').onclick = toggleTheme;
+['q', 'f-type', 'f-tag', 'f-sort'].forEach(id => $(id).addEventListener('input', renderGrid));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('viewer').classList.contains('on')) closeViewer(); });
+
+// expose pure logic for headless tests
+window.Hub = { indexFiles, filterSort, collectTags, collectTypes, toolFor, TOOLS, NEW_ITEMS, buildOpenMessages, handleSave,
+  newDoc, hasOpenable, closeViewer,
+  _loadForTest(records) { index = indexFiles(records); renderDashboard(); },
+  _setPendingForTest(e) { pendingOpen = e; },
+  _pending: () => pendingOpen,
+  _index: () => index };
+
+applyTheme();
+</script>
+</body>
+</html>
