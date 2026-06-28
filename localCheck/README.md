@@ -10,9 +10,9 @@
 No accounts. No cloud. No build step. No tracking. One HTML file.
 
 <p align="center">
-  <a href="https://USERNAME.github.io/REPO/localCheck/index.html"><img src="https://github.com/user-attachments/assets/2bb80b70-57ff-4773-8467-60eae769b5cd" alt="localCheck demo (animated)" width="820"></a>
+  <a href="https://zohaibus.github.io/localOffice/localCheck/index.html"><img src="https://github.com/user-attachments/assets/2bb80b70-57ff-4773-8467-60eae769b5cd" alt="localCheck demo (animated)" width="820"></a>
 </p>
-<p align="center"><a href="https://USERNAME.github.io/REPO/localCheck/index.html"><b>▶ Open localCheck</b></a></p>
+<p align="center"><a href="https://zohaibus.github.io/localOffice/localCheck/index.html"><b>▶ Open localCheck</b></a></p>
 
 ---
 
