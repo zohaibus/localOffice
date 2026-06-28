@@ -10,9 +10,9 @@
 No accounts. No cloud. No build step. No tracking. One HTML file.
 
 <p align="center">
-  <a href="https://USERNAME.github.io/REPO/localMark/index.html"><img src="https://github.com/user-attachments/assets/6321ac5a-ede5-4332-907a-695e8f48510b" alt="localMark demo (animated)" width="820"></a>
+  <a href="https://zohaibus.github.io/localOffice/localMark/index.html"><img src="https://github.com/user-attachments/assets/6321ac5a-ede5-4332-907a-695e8f48510b" alt="localMark demo (animated)" width="820"></a>
 </p>
-<p align="center"><a href="https://USERNAME.github.io/REPO/localMark/index.html"><b>▶ Open localMark</b></a></p>
+<p align="center"><a href="https://zohaibus.github.io/localOffice/localMark/index.html"><b>▶ Open localMark</b></a></p>
 
 ---
 
