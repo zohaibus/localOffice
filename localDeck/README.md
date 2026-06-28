@@ -10,9 +10,9 @@
 No accounts. No cloud. No subscription. No analytics. No tracking. One HTML file.
 
 <p align="center">
-  <a href="https://USERNAME.github.io/REPO/localDeck/localDeck.html"><img src="https://github.com/user-attachments/assets/86455c39-4767-4d14-972a-7af8f5f14e9c" alt="localDeck demo (animated)" width="820"></a>
+  <a href="https://zohaibus.github.io/localOffice/localDeck/localDeck.html"><img src="https://github.com/user-attachments/assets/86455c39-4767-4d14-972a-7af8f5f14e9c" alt="localDeck demo (animated)" width="820"></a>
 </p>
-<p align="center"><a href="https://USERNAME.github.io/REPO/localDeck/localDeck.html"><b>▶ Open localDeck</b></a></p>
+<p align="center"><a href="https://zohaibus.github.io/localOffice/localDeck/localDeck.html"><b>▶ Open localDeck</b></a></p>
 
 Part of [**LocalOffice**](../README.md), a family of single-file, local-first
 tools that share one JSON format (`localoffice/v1`).
