@@ -11,9 +11,9 @@
 No accounts. No cloud. No subscription. No analytics. No tracking. One HTML file.
 
 <p align="center">
-  <a href="https://USERNAME.github.io/REPO/localPlan/index.html"><img src="https://github.com/user-attachments/assets/65187345-cdd0-4c26-9403-527a5ba7ee4f" alt="LocalPlan demo (animated)" width="820"></a>
+  <a href="https://zohaibus.github.io/localOffice/localPlan/index.html"><img src="https://github.com/user-attachments/assets/65187345-cdd0-4c26-9403-527a5ba7ee4f" alt="LocalPlan demo (animated)" width="820"></a>
 </p>
-<p align="center"><a href="https://USERNAME.github.io/REPO/localPlan/index.html"><b>▶ Open LocalPlan</b></a></p>
+<p align="center"><a href="https://zohaibus.github.io/localOffice/localPlan/index.html"><b>▶ Open LocalPlan</b></a></p>
 
 Part of [**LocalOffice**](../README.md), a family of single-file, local-first
 tools that share one JSON format (`localoffice/v1`).
