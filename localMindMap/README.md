@@ -10,9 +10,9 @@
 No accounts. No cloud. No build step. No tracking. One HTML file.
 
 <p align="center">
-  <a href="https://USERNAME.github.io/REPO/localMindMap/index.html"><img src="https://github.com/user-attachments/assets/b2d42bfd-ea91-4d82-839a-8ad518aa9230" alt="localMindMap demo (animated)" width="820"></a>
+  <a href="https://zohaibus.github.io/localOffice/localMindMap/index.html"><img src="https://github.com/user-attachments/assets/b2d42bfd-ea91-4d82-839a-8ad518aa9230" alt="localMindMap demo (animated)" width="820"></a>
 </p>
-<p align="center"><a href="https://USERNAME.github.io/REPO/localMindMap/index.html"><b>▶ Open localMindMap</b></a></p>
+<p align="center"><a href="https://zohaibus.github.io/localOffice/localMindMap/index.html"><b>▶ Open localMindMap</b></a></p>
 
 ---
 
