@@ -63,6 +63,19 @@ const CASES = [
     const save = await page.evaluate(() => window.__lastSave);
     let savedType = null; try { savedType = JSON.parse(save.text).type; } catch (e) {}
     check(c.name + ': Save while embedded delegates to the Hub (posts the right envelope)', !!save && savedType === c.env.type);
+
+    // Embed-as-live-object: a host tool asks the child to flush its current state (embedFlush);
+    // the child must post {type:'embedState'} carrying its serialized envelope. This is the
+    // channel that carries a child's edits back into a hosting doc (localDoc embeds).
+    await page.evaluate(() => {
+      window.__embedState = null;
+      window.addEventListener('message', e => { const d = e.data; if (d && d.proto === 'localoffice' && d.type === 'embedState') window.__embedState = d.text; });
+      const f = document.getElementById('f'); if (f && f.contentWindow) f.contentWindow.postMessage({ proto: 'localoffice', type: 'embedFlush' }, '*');
+    });
+    await page.waitForTimeout(250);
+    const es = await page.evaluate(() => window.__embedState);
+    let esType = null; try { esType = JSON.parse(es).type; } catch (e) {}
+    check(c.name + ': flush as an embedded object returns its serialized state (embedState)', esType === c.env.type);
     await page.close();
   }
   console.log(`\n\n${pass} passed, ${fail} failed`);

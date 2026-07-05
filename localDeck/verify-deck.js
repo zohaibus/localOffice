@@ -41,6 +41,7 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
   await page.selectOption('#th-preset', 'paper');
   const bg = await page.evaluate(() => getComputedStyle(document.querySelector('#preview')).backgroundColor);
   check('theme preset applied (light bg)', bg === 'rgb(255, 255, 255)');
+  check('default deck theme is light "daylight" (not gloomy)', await page.evaluate(() => { const t = defaultTheme(); return t.preset === 'daylight' && String(t.bg).toLowerCase() === '#f7f8fa'; }));
   await page.locator('.slide-card').nth(1).locator('[data-op="up"]').click();
   check('reorder moved Findings to position 1', (await page.locator('.slide-card').nth(0).innerText()).includes('Findings'));
   await page.locator('.slide-card').nth(0).locator('[data-op="dup"]').click();
@@ -407,6 +408,242 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
     return { delta: Math.abs(lum(cs.color) - lum(cs.backgroundColor)) };
   });
   check('JSON inspector text contrasts with its background (theme vars resolve)', jp.delta > 80);
+
+  // ── JSON panel: the "build slides with any LLM" prompt toggle ──
+  check('JSON panel has a Prompt toggle with the slides schema, then returns to JSON', await page.evaluate(() => {
+    newDeck();
+    const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'JSON'); btn.click();
+    const jp = document.getElementById('jp'), ta = jp.querySelector('textarea'), pb = jp.querySelector('[data-a="prompt"]');
+    if (!pb || pb.hidden) return false;
+    pb.click();
+    const shown = ta.value.includes('localoffice/v1') && ta.value.includes('"type": "slides"') && /layout/.test(ta.value) && ta.value.includes('<describe the deck you want');
+    pb.click();
+    const back = ta.value.includes('"format"') && !ta.value.includes('<describe');
+    return shown && back;
+  }));
+
+  // ── the schema the prompt asks for (layout + role + content) MUST actually
+  //    render, or the prompt is useless. Apply an LLM-shaped deck and verify. ──
+  check('a schema-shaped deck (layout + role + content) applies and renders', await page.evaluate(() => {
+    const env = { format: 'localoffice/v1', type: 'slides', meta: { title: 'Gen Deck' }, body: { slides: [
+      { id: 's1', layout: 'title', blocks: [{ role: 'title', content: 'Rollout Plan' }, { role: 'subtitle', content: 'Q3' }] },
+      { id: 's2', layout: 'bullets', blocks: [{ role: 'title', content: 'Steps' }, { role: 'body', content: 'Build\nCanary\nFull rollout' }] },
+      { id: 's3', layout: 'table', blocks: [{ role: 'title', content: 'Owners' }, { role: 'table', content: 'Task | Owner\nBuild | Priya\nDeploy | Lena' }] } ] } };
+    applyOpenedDeck(env, null);
+    const b = slides()[1].blocks.find(x => x.role === 'body');
+    const t = slides()[2].blocks.find(x => x.role === 'table');
+    return slides().length === 3 && deck.meta.title === 'Gen Deck' && b && /Canary/.test(b.content) && t && /Owner/.test(t.content) && slides()[0].layout === 'title';
+  }));
+
+  // ── in-app "New deck" mode: generate a whole deck via local Ollama (mocked) → preview → apply ──
+  check('AI New-deck mode drafts a deck and applies it', await page.evaluate(async () => {
+    window.fetch = async (url) => {
+      url = String(url);
+      if (url.endsWith('/api/tags')) return { ok: true, json: async () => ({ models: [{ name: 'llama3.2' }] }) };
+      if (url.endsWith('/api/generate')) return { ok: true, json: async () => ({ response: JSON.stringify({ format: 'localoffice/v1', type: 'slides', meta: { title: 'AI Deck' }, body: { slides: [
+        { id: 's1', layout: 'title', blocks: [{ role: 'title', content: 'Vision' }, { role: 'subtitle', content: '2026' }] },
+        { id: 's2', layout: 'bullets', blocks: [{ role: 'title', content: 'Now' }, { role: 'body', content: 'Ship\nMeasure' }] } ] } }) }) };
+      return { ok: false, status: 404 };
+    };
+    await AI.detect();
+    document.querySelector('input[name="ai-mode"][value="deck"]').checked = true;
+    document.getElementById('ai-model').innerHTML = '<option>llama3.2</option>'; document.getElementById('ai-model').value = 'llama3.2';
+    document.getElementById('ai-prompt').value = 'a product vision deck';
+    await AI.send();
+    const previewShown = !document.getElementById('ai-apply-deck').classList.contains('hidden') && /2 slide/.test(document.getElementById('ai-response').textContent);
+    AI.applyDeck();
+    const applied = slides().length === 2 && deck.meta.title === 'AI Deck' && slides()[1].blocks.find(b => b.role === 'body').content.includes('Measure');
+    return previewShown && applied;
+  }));
+
+  check('Embeds host: + Add embeds an object (LocalRender preview) + modal edit; round-trip preserves body.embeds', await page.evaluate(() => {
+    EmbedHost.open();
+    const sel = document.querySelector('#eh [data-a="add"]'); if (!sel) return false;
+    sel.value = 'mindmap'; sel.dispatchEvent(new Event('change'));
+    const arr = deck.body.embeds; const added = Array.isArray(arr) && arr.length === 1 && arr[0].envelope.type === 'mindmap';
+    const noDrawerIframe = !document.querySelector('#eh iframe');
+    const prev = document.querySelector('#eh .eh-prev'); const previewShown = !!prev && prev.innerHTML.length > 0;
+    document.querySelector('#eh .eh-edit').click();
+    const modalOpen = !!(document.getElementById('eh-editor') && document.getElementById('eh-editor').classList.contains('on'));
+    const fr = document.querySelector('#eh-editor .ee-frame');
+    const edited = { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Sub' }, body: { nodes: [{ id: 'r', text: 'R', parent: null, x: 0, y: 0 }, { id: 'a', text: 'A', parent: 'r', x: 80, y: 40 }], edges: [] } };
+    window.dispatchEvent(new MessageEvent('message', { data: { proto: 'localoffice', type: 'embedState', text: JSON.stringify(edited) }, source: fr.contentWindow }));
+    const cached = deck.body.embeds[0].envelope.body.nodes.length === 2;
+    const back = LocalOffice.parse(LocalOffice.stringify(deck)).envelope;
+    const rt = back.body.embeds && back.body.embeds.length === 1 && back.body.embeds[0].envelope.type === 'mindmap' && back.body.embeds[0].envelope.body.nodes.length === 2;
+    const hasBtn = [...document.querySelectorAll('button')].some(b => b.textContent.indexOf('Embeds') >= 0);
+    return added && noDrawerIframe && previewShown && modalOpen && cached && rt && hasBtn;
+  }));
+
+  // ── inline on-slide embedded objects (embed layout) ──
+  check('localDeck: embed layout is registered', await page.evaluate(() => !!LAYOUTS.embed && LAYOUT_ORDER.indexOf('embed') >= 0));
+  const inl = await page.evaluate(() => {
+    deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
+    const blk = s.blocks.find(b => b.type === 'embed');
+    const created = !!blk && !!blk.embed && blk.embed.envelope === null;
+    blk.embed = { envelope: { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Arch' }, body: { nodes: [{ id: 'r', text: 'Root', parent: null, x: 100, y: 100 }, { id: 'a', text: 'A', parent: 'r', x: 200, y: 160 }], edges: [] } } };
+    syncBlocks(s);   // re-sync on same layout must PRESERVE the object
+    const blk2 = s.blocks.find(b => b.type === 'embed');
+    const preserved = !!(blk2.embed && blk2.embed.envelope && blk2.embed.envelope.body.nodes.length === 2);
+    const html = blockHTML(blk2, theme(), {});
+    const hasSvg = html.indexOf('<svg') >= 0 && html.indexOf('lo-r-svg') >= 0 && html.indexOf('Root') >= 0;
+    const exp = blockHTML(blk2, theme(), { export: true });
+    const expSvg = exp.indexOf('<svg') >= 0 && exp.indexOf('Root') >= 0;
+    const back = LocalOffice.parse(LocalOffice.stringify(deck)).envelope;
+    const rtBlk = back.body.slides[0].blocks.find(b => b.type === 'embed');
+    const rt = !!(rtBlk && rtBlk.embed && rtBlk.embed.envelope.type === 'mindmap' && rtBlk.embed.envelope.body.nodes.length === 2);
+    return { created, preserved, hasSvg, expSvg, rt };
+  });
+  check('localDeck: choosing the embed layout creates an empty embed block', inl.created);
+  check('localDeck: syncBlocks preserves the embedded object across re-sync', inl.preserved);
+  check('localDeck: a mind map embeds as a real SVG snapshot on the slide', inl.hasSvg);
+  check('localDeck: the on-slide embed snapshot is included in HTML export', inl.expSvg);
+  check('localDeck: the embedded object round-trips through save/load', inl.rt);
+  check('localDeck: a sheet embeds as a real table on the slide + export (author in sheets, show in deck)', await page.evaluate(() => {
+    deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
+    const blk = s.blocks.find(b => b.type === 'embed');
+    blk.embed = { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'Budget' }, body: { sheets: [{ name: 'S', cells: { A1: { v: 'Item' }, B1: { v: 'Cost' }, A2: { v: 'Bolt' }, B2: { v: 12 } } }] } } };
+    const html = blockHTML(blk, theme(), {}), exp = blockHTML(blk, theme(), { export: true });
+    return html.indexOf('<table') >= 0 && html.indexOf('Item') >= 0 && html.indexOf('Bolt') >= 0 && html.indexOf('>12<') >= 0 && exp.indexOf('<table') >= 0;
+  }));
+  check('localDeck: uses the shared LocalRender module', await page.evaluate(() => typeof LocalRender === 'object' && typeof LocalRender.render === 'function'));
+  check('localDeck: A+/A− scales an embedded object\'s font size', await page.evaluate(() => {
+    deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
+    const blk = s.blocks.find(b => b.type === 'embed'); blk.embed = { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'T' }, body: { sheets: [{ cells: { A1: { v: 'x' } } }] } }, scale: 1.6 };
+    return blockHTML(blk, theme(), {}).indexOf('font-size:8.00cqw') >= 0;   // 5cqw * 1.6
+  }));
+  check('localDeck: embed font scale round-trips through save/load', await page.evaluate(() => {
+    deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
+    const blk = s.blocks.find(b => b.type === 'embed'); blk.embed = { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'T' }, body: { sheets: [{ cells: { A1: { v: 'x' } } }] } }, scale: 1.9 };
+    const back = LocalOffice.parse(LocalOffice.stringify(deck)).envelope;
+    return back.body.slides[0].blocks.find(b => b.type === 'embed').embed.scale === 1.9;
+  }));
+  check('localDeck: slide counter uses tabular figures', await page.evaluate(() => { const el = document.getElementById('counter'); return !!el && getComputedStyle(el).fontVariantNumeric.indexOf('tabular-nums') >= 0; }));
+  const modal = await page.evaluate(() => {
+    deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
+    const blk = s.blocks.find(b => b.type === 'embed'); blk.embed = { envelope: blankEmbedEnvelope('mindmap') };
+    openEmbedEditor(blk);
+    const host = document.getElementById('embed-editor'); const opened = !!(host && host.classList.contains('on'));
+    const fr = host.querySelector('.ee-frame');
+    const edited = { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Edited' }, body: { nodes: [{ id: 'r', text: 'R', parent: null, x: 0, y: 0 }, { id: 'a', text: 'A', parent: 'r', x: 80, y: 40 }, { id: 'b', text: 'B', parent: 'r', x: -80, y: 40 }], edges: [] } };
+    window.dispatchEvent(new MessageEvent('message', { data: { proto: 'localoffice', type: 'embedState', text: JSON.stringify(edited) }, source: fr.contentWindow }));
+    const updated = blk.embed.envelope.body.nodes.length === 3 && blk.embed.envelope.meta.title === 'Edited';
+    closeEmbedEditor();
+    const closed = !host.classList.contains('on');
+    return { opened, updated, closed };
+  });
+  check('localDeck: Edit opens a live editor modal running the real tool', modal.opened);
+  check('localDeck: edits in the modal stream back into the slide block (embedState)', modal.updated);
+  check('localDeck: closing the editor dismisses the modal', modal.closed);
+
+  check('localDeck: ✦ Prompt teaches embedding (sheet table + mind-map FSM)', await page.evaluate(() =>
+    LOCALDECK_PROMPT.indexOf('"embed"') >= 0 && LOCALDECK_PROMPT.toLowerCase().indexOf('sheet') >= 0 && LOCALDECK_PROMPT.toLowerCase().indexOf('finite-state') >= 0));
+  check('localDeck: an LLM-authored deck with embed slides applies + renders (sheet table + FSM mind map)', await page.evaluate(() => {
+    const env = { format: 'localoffice/v1', type: 'slides', meta: { title: 'Gen' }, body: { theme: {}, footer: {}, slides: [
+      { id: 's1', layout: 'title', blocks: [{ role: 'title', content: 'Deck' }, { role: 'subtitle', content: 'x' }] },
+      { id: 's2', layout: 'embed', blocks: [{ role: 'title', content: 'Budget' }, { role: 'embed', type: 'embed', embed: { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'Budget' }, body: { sheets: [{ name: 'S', cells: { A1: { v: 'Item' }, B1: { v: 'Cost' }, A2: { v: 'Bolt' }, B2: { v: 5 } } }] } } } }] },
+      { id: 's3', layout: 'embed', blocks: [{ role: 'title', content: 'FSM' }, { role: 'embed', type: 'embed', embed: { envelope: { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'FSM' }, body: { nodes: [{ id: 'a', text: 'IDLE', parent: null, x: 0, y: 0 }, { id: 'b', text: 'RUN', parent: null, x: 220, y: 0 }], edges: [{ from: 'a', to: 'b', label: 'go' }] } } } }] }
+    ] } };
+    applyOpenedDeck(env, null);
+    const b2 = deck.body.slides[1].blocks.find(b => b.type === 'embed'), b3 = deck.body.slides[2].blocks.find(b => b.type === 'embed');
+    const kept = !!(b2 && b2.embed && b2.embed.envelope.type === 'sheet' && b3 && b3.embed && b3.embed.envelope.type === 'mindmap');
+    const h2 = blockHTML(b2, theme(), { export: true }), h3 = blockHTML(b3, theme(), { export: true });
+    const rendered = h2.indexOf('<table') >= 0 && h2.indexOf('Item') >= 0 && h2.indexOf('>5<') >= 0 && h3.indexOf('<svg') >= 0 && h3.indexOf('IDLE') >= 0;
+    return kept && rendered;
+  }));
+
+  // ── embedded objects are VISIBLY rendered in the editor (non-zero geometry) ──
+  check('localDeck: an embedded sheet is a visibly-sized table in the editor stage', await page.evaluate(() => {
+    deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
+    const blk = s.blocks.find(b => b.type === 'embed'); blk.embed = { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'T' }, body: { sheets: [{ name: 'S', cells: { A1: { v: 'H' }, A2: { v: 'v' } } }] } } };
+    renderAll();
+    const t = document.querySelector('#preview .t-embed table'); if (!t) return false; const r = t.getBoundingClientRect(); return r.width > 5 && r.height > 5;
+  }));
+  check('localDeck: an embedded FSM mind map is a visibly-sized SVG in the editor stage', await page.evaluate(() => {
+    deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
+    const blk = s.blocks.find(b => b.type === 'embed'); blk.embed = { envelope: { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'F' }, body: { nodes: [{ id: 'a', text: 'IDLE', parent: null, x: 0, y: 0 }, { id: 'b', text: 'RUN', parent: null, x: 200, y: 0 }], edges: [{ from: 'a', to: 'b' }] } } };
+    renderAll();
+    const g = document.querySelector('#preview .t-embed svg'); if (!g) return false; const r = g.getBoundingClientRect(); return r.width > 20 && r.height > 20;
+  }));
+
+  // ── EXPORT actually renders: build a deck with embed slides, load the EXPORTED single file in a fresh browser ──
+  const fs = require('fs');
+  const exportHtml = await page.evaluate(() => {
+    deck.body.slides = [
+      { id: 's1', layout: 'title', blocks: [{ role: 'title', content: 'Deck' }, { role: 'subtitle', content: 'x' }] },
+      { id: 's2', layout: 'embed', blocks: [{ role: 'title', content: 'Budget' }, { role: 'embed', type: 'embed', embed: { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'Budget' }, body: { sheets: [{ name: 'S', cells: { A1: { v: 'Item' }, B1: { v: 'Cost' }, A2: { v: 'Bolt' }, B2: { v: 12, format: { bg: '#ffd54f' } } } }] } } } }] },
+      { id: 's3', layout: 'embed', blocks: [{ role: 'title', content: 'FSM' }, { role: 'embed', type: 'embed', embed: { envelope: { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'FSM' }, body: { nodes: [{ id: 'a', text: 'IDLE', parent: null, x: 0, y: 0, color: '#3d8bd4' }, { id: 'b', text: 'RUN', parent: null, x: 220, y: 0, kind: 'diamond' }], edges: [{ from: 'a', to: 'b', label: 'go', style: 'arrow' }] } } } }] }
+    ];
+    deck.body.slides.forEach(syncBlocks); cur = 0; renderAll();
+    return buildStandaloneHTML();
+  });
+  const tmp = path.join(__dirname, '_embed_export_test.html');
+  fs.writeFileSync(tmp, exportHtml);
+  const ep = await browser.newPage();
+  const eErrors = []; ep.on('pageerror', e => eErrors.push(String(e))); ep.on('console', m => { if (m.type() === 'error') eErrors.push(m.text()); });
+  const extReq = []; ep.on('request', r => { if (/^https?:/i.test(r.url())) extReq.push(r.url()); });
+  await ep.goto('file:///' + tmp.replace(/\\/g, '/'));
+  await ep.waitForTimeout(150);
+  const exp = await ep.evaluate(() => {
+    const slides = [...document.querySelectorAll('.slide')];
+    slides.forEach(s => s.classList.remove('show')); slides[1].classList.add('show');
+    const table = slides[1].querySelector('.t-embed table'); const tR = table ? table.getBoundingClientRect() : { width: 0, height: 0 };
+    const tableText = table ? table.innerText : '';
+    slides.forEach(s => s.classList.remove('show')); slides[2].classList.add('show');
+    const svg = slides[2].querySelector('.t-embed svg'); const sR = svg ? svg.getBoundingClientRect() : { width: 0, height: 0 };
+    return { nSlides: slides.length, hasTable: !!table, tableVisible: tR.width > 20 && tR.height > 20, tableText, hasSvg: !!svg, svgVisible: sR.width > 20 && sR.height > 20, svgText: svg ? svg.textContent : '' };
+  });
+  await ep.close(); try { fs.unlinkSync(tmp); } catch (e) {}
+  check('export: exported deck has all 3 slides', exp.nSlides === 3);
+  check('export: embedded sheet renders as a VISIBLE table in the exported file', exp.hasTable && exp.tableVisible && exp.tableText.indexOf('Bolt') >= 0 && exp.tableText.indexOf('12') >= 0);
+  check('export: embedded FSM mind map renders as a VISIBLE svg in the exported file', exp.hasSvg && exp.svgVisible && exp.svgText.indexOf('IDLE') >= 0 && exp.svgText.indexOf('RUN') >= 0);
+  check('export: a coloured sheet cell keeps its fill colour in the exported file', exportHtml.indexOf('background:#ffd54f') >= 0);
+  check('export: a custom node colour + diamond shape survive into the exported file', exportHtml.indexOf('#3d8bd4') >= 0 && exportHtml.indexOf('<polygon') >= 0);
+  check('export: exported deck makes ZERO external network requests (offline, self-contained)', extReq.length === 0);
+  check('export: exported deck loads with no console/page errors', eErrors.length === 0);
+
+  // ── live host×child: the deck editor modal boots the REAL tool for several embed types ──
+  const bootsInModal = async (type, urlRe, probe) => {
+    await page.evaluate((ty) => { deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s); const b = s.blocks.find(x => x.type === 'embed'); b.embed = { envelope: blankEmbedEnvelope(ty) }; openEmbedEditor(b); }, type);
+    let ok = false;
+    for (let i = 0; i < 26; i++) { const fr = page.frames().find(f => urlRe.test(f.url())); if (fr) { try { ok = await fr.evaluate(probe); } catch (e) {} if (ok) break; } await page.waitForTimeout(150); }
+    await page.evaluate(() => { if (typeof closeEmbedEditor === 'function') closeEmbedEditor(); });
+    await page.waitForTimeout(60);
+    return ok;
+  };
+  check('localDeck modal boots the real Sheet tool with the object', await bootsInModal('sheet', /localSheets/i, () => typeof Store === 'object' && !!(Store.data && Store.data.sheets)));
+  check('localDeck modal boots the real Runbook tool with the object', await bootsInModal('runbook', /localCheck/i, () => typeof data === 'object' && Array.isArray(data.steps) && data.steps.length > 0));
+  check('localDeck modal boots the real Plan tool with the object', await bootsInModal('plan', /localPlan/i, () => typeof data === 'object' && Array.isArray(data.tracks) && data.tracks.length > 0));
+
+  // ── cross-embed render matrix: EVERY embeddable type renders visibly + with correct content ──
+  const matrix = await page.evaluate(() => {
+    const cases = {
+      sheet:      { env: { type: 'sheet', body: { sheets: [{ cells: { A1: { v: 'Head1' }, B1: { v: 'Head2' }, A2: { v: 'row' }, B2: { v: 9 } } }] } }, needs: ['<table', 'Head1', '>9<', 'tabular-nums'] },
+      mindmap:    { env: { type: 'mindmap', body: { nodes: [{ id: 'a', text: 'Root', parent: null, x: 0, y: 0, color: 'green' }, { id: 'b', text: 'Leaf', parent: 'a', x: 120, y: 60 }], edges: [{ from: 'a', to: 'b', style: 'arrow', label: 'go' }] } }, needs: ['<svg', 'Root', ' C ', 'marker-end', '>go<', '#5d9b48'] },
+      runbook:    { env: { type: 'runbook', body: { steps: [{ kind: 'check', text: 'Inspect', done: true }, { kind: 'measure', text: 'Volts' }] } }, needs: ['☑', '☐', 'Inspect'] },
+      plan:       { env: { type: 'plan', body: { tracks: [{ title: 'Work', sections: [{ name: 'Now', items: [{ text: 'ship it' }] }] }] } }, needs: ['Work', 'ship it'] },
+      flashcards: { env: { type: 'flashcards', body: { cards: [{ front: 'Q1', back: 'A1' }] } }, needs: ['Q1', 'A1'] },
+      slides:     { env: { type: 'slides', body: { slides: [{ blocks: [{ role: 'title', content: 'Intro' }] }, { blocks: [{ role: 'title', content: 'Next' }] }] } }, needs: ['1. Intro', '2. Next'] },
+      doc:        { env: { type: 'doc', body: { blocks: [{ heading: 'Cause', text: 'the root cause' }] } }, needs: ['Cause', 'the root cause'] },
+    };
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:0;top:0;width:440px;height:320px;font-size:24px;color:#111;z-index:99999';
+    document.body.appendChild(host);
+    const out = {};
+    for (const t in cases) {
+      const html = LocalRender.render(cases[t].env);
+      host.innerHTML = '<div class="probe" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden">' + html + '</div>';
+      const el = host.querySelector('.probe > *');
+      const box = el ? el.getBoundingClientRect() : { width: 0, height: 0 };
+      out[t] = { visible: box.width > 8 && box.height > 8, w: Math.round(box.width), h: Math.round(box.height), contentOk: cases[t].needs.every(n => html.indexOf(n) >= 0) };
+    }
+    host.remove();
+    return out;
+  });
+  console.log('\n  cross-embed render matrix: ' + JSON.stringify(matrix));
+  ['sheet', 'mindmap', 'runbook', 'plan', 'flashcards', 'slides', 'doc'].forEach(t => {
+    check('cross-embed render: a ' + t + ' renders visibly with correct content', matrix[t] && matrix[t].visible && matrix[t].contentOk);
+  });
 
   console.log(`\n\n${pass} passed, ${fail} failed`);
   if (fails.length) { console.log('Failures:'); fails.forEach(f => console.log('  ✗ ' + f)); }

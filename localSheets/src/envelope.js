@@ -6,7 +6,7 @@
 // cells). This lives ONLY at the save/load boundary - the engine, Store, undo,
 // and structural ops keep their existing in-memory model untouched.
 //
-// Mapping decisions (see also LOCALOFFICE_BUILD_PLAN §2.3):
+// Mapping decisions:
 //   • Cells are recipes: formula → { f }, literal → { v: <raw input> }. Cached
 //     value/type are NOT stored; they are recomputed on load (deterministic).
 //     A cell's `format` (numfmt/bold/…) is preserved as an extension field.

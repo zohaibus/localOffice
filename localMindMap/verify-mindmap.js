@@ -142,16 +142,25 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
   check('collapse hides the subtree (fewer rendered nodes)', collapse.before === 4 && collapse.after === 2);
   check('a collapsed node shows a +count badge', /^\+\d/.test(collapse.badge));
 
-  // delete removes the node and its descendants + dependent edges
+  // Del (default, Visio-like): delete ONLY the node, re-parent its children up
   const del = await page.evaluate(() => {
     newMind(true);
     const root = data.nodes[0].id;
     const c1 = addChild(root); const g1 = addChild(c1.id);
-    data.edges.push({ from: root, to: g1.id, label: 'x' });
     deleteNode(c1.id);
+    return { nodes: data.nodes.length, g1parent: byId(g1.id) ? byId(g1.id).parent : 'GONE', root };
+  });
+  check('Del deletes only the node and re-parents its children (branch survives)', del.nodes === 2 && del.g1parent === del.root);
+  // Shift+Del (deleteBranch): remove the node and its whole subtree + dependent edges
+  const delB = await page.evaluate(() => {
+    newMind(true);
+    const root = data.nodes[0].id;
+    const c1 = addChild(root); const g1 = addChild(c1.id);
+    data.edges.push({ from: root, to: g1.id, label: 'x' });
+    deleteBranch(c1.id);
     return { nodes: data.nodes.length, edges: data.edges.length };
   });
-  check('delete removes the node, its descendants, and dependent edges', del.nodes === 1 && del.edges === 0);
+  check('deleteBranch removes the node, its descendants, and dependent edges', delB.nodes === 1 && delB.edges === 0);
   check('delete refuses to remove the last node', await page.evaluate(() => { newMind(true); deleteNode(data.nodes[0].id); return data.nodes.length === 1; }));
 
   // cross-links render as dashed paths with a label
@@ -498,6 +507,212 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
   });
   check('AI plots a state machine (states as nodes)', sm.previewShown === true && sm.stateNodes === 3 && sm.added === 3);
   check('transitions become port-anchored edges; invalid refs dropped', sm.portEdges === 2);
+
+  check('JSON panel Prompt toggle shows the mindmap schema, then returns to JSON', await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'JSON'); btn.click();
+    const jp = document.getElementById('jp'), ta = jp.querySelector('textarea'), pb = jp.querySelector('[data-a="prompt"]');
+    if (!pb || pb.hidden) return false;
+    pb.click();
+    const shown = ta.value.includes('localoffice/v1') && ta.value.includes('"type": "mindmap"') && ta.value.includes('<describe the mind map you want');
+    pb.click();
+    return shown && ta.value.includes('"format"') && !ta.value.includes('<describe the mind map you want');
+  }));
+  check('a schema-shaped mindmap applies and renders', await page.evaluate(() => {
+    applyOpenedMind({ type: 'mindmap', meta: { title: 'Gen' }, body: { nodes: [{ id: 'r', text: 'Root', parent: null }, { id: 'a', text: 'A', parent: 'r' }, { id: 'b', text: 'B', parent: 'r' }], edges: [] } }, null);
+    render();
+    return data.nodes.length === 3 && byId('a').parent === 'r' && Number.isFinite(byId('a').x);
+  }));
+
+  check('AI in-app Generate drafts a map and applies it (mocked Ollama)', await page.evaluate(async () => {
+    const env = { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Gen' }, body: { nodes: [{ id: 'r', text: 'Root', parent: null }, { id: 'a', text: 'A', parent: 'r' }, { id: 'b', text: 'B', parent: 'r' }], edges: [] } };
+    const sel = document.getElementById('ai-model'); sel.innerHTML = '<option value="m">m</option>'; sel.value = 'm';
+    window.fetch = async (u) => { u = String(u); if (u.indexOf('/api/generate') >= 0) return { ok: true, json: async () => ({ response: JSON.stringify(env) }) }; return { ok: false, status: 404 }; };
+    document.getElementById('gen-input').value = 'a tiny tree';
+    await ogRun();
+    const previewShown = !document.getElementById('gen-apply').classList.contains('hidden');
+    ogApply();
+    return previewShown && data.nodes.length === 3 && byId('a').parent === 'r' && Number.isFinite(byId('a').x);
+  }));
+
+  check('Embeds host: + Add embeds an object (LocalRender preview) + modal edit; round-trip preserves body.embeds', await page.evaluate(() => {
+    EmbedHost.open();
+    const sel = document.querySelector('#eh [data-a="add"]'); if (!sel) return false;
+    sel.value = 'mindmap'; sel.dispatchEvent(new Event('change'));
+    const arr = data.embeds; const added = Array.isArray(arr) && arr.length === 1 && arr[0].envelope.type === 'mindmap';
+    const noDrawerIframe = !document.querySelector('#eh iframe');
+    const prev = document.querySelector('#eh .eh-prev'); const previewShown = !!prev && prev.innerHTML.length > 0;
+    document.querySelector('#eh .eh-edit').click();
+    const modalOpen = !!(document.getElementById('eh-editor') && document.getElementById('eh-editor').classList.contains('on'));
+    const fr = document.querySelector('#eh-editor .ee-frame');
+    const edited = { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Sub' }, body: { nodes: [{ id: 'r', text: 'R', parent: null, x: 0, y: 0 }, { id: 'a', text: 'A', parent: 'r', x: 80, y: 40 }], edges: [] } };
+    window.dispatchEvent(new MessageEvent('message', { data: { proto: 'localoffice', type: 'embedState', text: JSON.stringify(edited) }, source: fr.contentWindow }));
+    const cached = data.embeds[0].envelope.body.nodes.length === 2;
+    const back = LocalOffice.parse(LocalOffice.stringify(exportData())).envelope;
+    const rt = back.body.embeds && back.body.embeds.length === 1 && back.body.embeds[0].envelope.type === 'mindmap' && back.body.embeds[0].envelope.body.nodes.length === 2;
+    const hasBtn = [...document.querySelectorAll('button')].some(b => b.textContent.indexOf('Embeds') >= 0);
+    return added && noDrawerIframe && previewShown && modalOpen && cached && rt && hasBtn;
+  }));
+
+  // ── node shapes: circle + triangle ──
+  check('setNodeKind adds a circle shape (kind + DOM class)', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'S', x: 0, y: 0, parent: null }], edges: [] }; selectedId = 'a'; render();
+    setNodeKind('circle'); const el = document.querySelector('.node[data-id="a"]');
+    return byId('a').kind === 'circle' && !!el && el.classList.contains('shape-circle');
+  }));
+  check('setNodeKind triangle then none clears it', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'D', x: 0, y: 0, parent: null }], edges: [] }; selectedId = 'a'; render();
+    setNodeKind('triangle'); const tri = byId('a').kind === 'triangle' && document.querySelector('.node[data-id="a"]').classList.contains('shape-triangle');
+    setNodeKind('none'); return tri && byId('a').kind === undefined;
+  }));
+  // ── styled / labelled / clickable cross-links ──
+  const twoNodes = "data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }, { id: 'b', text: 'B', x: 200, y: 0, parent: null }], edges: [] };";
+  check('finishLink creates a cross-link defaulting to an arrow, and selects it', await page.evaluate((tn) => {
+    eval(tn); selectedId = 'a'; render(); startLink('a'); finishLink('b');
+    return data.edges.length === 1 && data.edges[0].style === 'arrow' && selectedEdge === 0;
+  }, twoNodes));
+  check('selecting an edge shows the edge bar', await page.evaluate((tn) => {
+    eval(tn); data.edges = [{ from: 'a', to: 'b', style: 'arrow' }]; render(); selectEdge(0);
+    return selectedEdge === 0 && !document.getElementById('edge-bar').classList.contains('hidden');
+  }, twoNodes));
+  check('edge style: arrow renders a marker, dashed renders a dash-array', await page.evaluate((tn) => {
+    eval(tn); data.edges = [{ from: 'a', to: 'b', style: 'arrow' }]; render();
+    const arrow = document.getElementById('edges').innerHTML.indexOf('marker-end="url(#mm-arw)"') >= 0;
+    selectEdge(0); setEdgeStyle('dashed');
+    return arrow && data.edges[0].style === 'dashed' && document.getElementById('edges').innerHTML.indexOf('stroke-dasharray') >= 0;
+  }, twoNodes));
+  check('edge style: double arrow renders both markers', await page.evaluate((tn) => {
+    eval(tn); data.edges = [{ from: 'a', to: 'b', style: 'arrow2' }]; render();
+    const h = document.getElementById('edges').innerHTML;
+    return h.indexOf('marker-start="url(#mm-arw)"') >= 0 && h.indexOf('marker-end="url(#mm-arw)"') >= 0;
+  }, twoNodes));
+  check('setEdgeLabel writes the label + draws it', await page.evaluate((tn) => {
+    eval(tn); data.edges = [{ from: 'a', to: 'b', style: 'arrow' }]; render(); selectEdge(0); setEdgeLabel('go');
+    return data.edges[0].label === 'go' && document.getElementById('edges').innerHTML.indexOf('>go<') >= 0;
+  }, twoNodes));
+  check('clicking an edge hit-path selects it', await page.evaluate((tn) => {
+    eval(tn); data.edges = [{ from: 'a', to: 'b', style: 'arrow' }]; selectedEdge = null; render();
+    const hit = document.querySelector('#edges .xhit'); if (!hit) return false;
+    hit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return selectedEdge === 0;
+  }, twoNodes));
+  check('deleteEdge removes the selected link + hides the bar', await page.evaluate((tn) => {
+    eval(tn); data.edges = [{ from: 'a', to: 'b', style: 'arrow' }]; render(); selectEdge(0); deleteEdge();
+    return data.edges.length === 0 && selectedEdge === null && document.getElementById('edge-bar').classList.contains('hidden');
+  }, twoNodes));
+  check('selecting a node deselects any edge + hides the bar', await page.evaluate((tn) => {
+    eval(tn); data.edges = [{ from: 'a', to: 'b', style: 'arrow' }]; render(); selectEdge(0); selectNode('a');
+    return selectedEdge === null && document.getElementById('edge-bar').classList.contains('hidden');
+  }, twoNodes));
+  check('edge style + label + node shape round-trip through serialize', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null, kind: 'circle' }, { id: 'b', text: 'B', x: 200, y: 0, parent: null }], edges: [{ from: 'a', to: 'b', style: 'arrow2', label: 'x' }] };
+    const back = LocalOffice.parse(LocalOffice.stringify(exportData())).envelope;
+    return back.body.nodes[0].kind === 'circle' && back.body.edges[0].style === 'arrow2' && back.body.edges[0].label === 'x';
+  }));
+  check('clicking the edge bar does NOT deselect the edge (bar persists until Done/✕)', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }, { id: 'b', text: 'B', x: 200, y: 0, parent: null }], edges: [{ from: 'a', to: 'b', style: 'arrow' }] };
+    render(); selectEdge(0);
+    const bar = document.getElementById('edge-bar');
+    bar.querySelector('[data-es="dashed"]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));   // used to deselect via the canvas handler
+    return selectedEdge === 0 && !bar.classList.contains('hidden');
+  }));
+  check('connectors anchor to node borders, not centres (line does not run through the text)', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'AAAAA', x: 0, y: 0, parent: null }, { id: 'b', text: 'BBBBB', x: 300, y: 0, parent: 'a' }], edges: [] };
+    render();
+    const d = document.querySelector('#edges path.link').getAttribute('d');
+    const m = /^M ([\-0-9.]+) /.exec(d);
+    return m && parseFloat(m[1]) > 5;   // exits a's RIGHT border (x>0), not its centre (x=0)
+  }));
+  // ── parent→child connections are now clickable + labelable + styleable ──
+  const pTwo = "data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }, { id: 'b', text: 'B', x: 200, y: 0, parent: 'a' }], edges: [] };";
+  check('a parent→child connection is clickable (hit-path selects it)', await page.evaluate((tn) => {
+    eval(tn); render();
+    const hit = document.querySelector('#edges .xhit[data-parent="b"]'); if (!hit) return false;
+    hit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return selectedParent === 'b' && selectedEdge === null && !document.getElementById('edge-bar').classList.contains('hidden');
+  }, pTwo));
+  check('styling a parent connection stores it on the child + renders the marker', await page.evaluate((tn) => {
+    eval(tn); render(); selectParentLink('b'); setEdgeStyle('arrow');
+    return byId('b').linkStyle === 'arrow' && document.getElementById('edges').innerHTML.indexOf('marker-end="url(#mm-arw)"') >= 0;
+  }, pTwo));
+  check('labelling a parent connection stores it on the child + draws it', await page.evaluate((tn) => {
+    eval(tn); render(); selectParentLink('b'); setEdgeLabel('flows to');
+    return byId('b').linkLabel === 'flows to' && document.getElementById('edges').innerHTML.indexOf('flows to') >= 0;
+  }, pTwo));
+  check('deleting a parent connection detaches the child (parent → null), keeps both nodes', await page.evaluate((tn) => {
+    eval(tn); render(); selectParentLink('b'); deleteEdge();
+    return data.nodes.length === 2 && byId('b').parent === null && selectedParent === null;
+  }, pTwo));
+  check('parent connection style + label round-trip through serialize', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }, { id: 'b', text: 'B', x: 200, y: 0, parent: 'a', linkStyle: 'dashed', linkLabel: 'L' }], edges: [] };
+    const back = LocalOffice.parse(LocalOffice.stringify(exportData())).envelope;
+    return back.body.nodes[1].linkStyle === 'dashed' && back.body.nodes[1].linkLabel === 'L';
+  }));
+  // ── standalone shape node ──
+  check('picking a shape with nothing selected creates a new shape node', await page.evaluate(() => {
+    newMind(true); const before = data.nodes.length;
+    selectNode(null); selectedId = null;   // ensure nothing selected
+    setNodeKind('triangle');
+    return data.nodes.length === before + 1 && byId(selectedId).kind === 'triangle' && byId(selectedId).parent === null;
+  }));
+  // ── full colour palette + more shapes ──
+  check('setNodeColor accepts a custom hex (c-custom class + inline --nc)', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }], edges: [] }; selectedId = 'a'; render();
+    setNodeColor('#3d8bd4'); const el = document.querySelector('.node[data-id="a"]');
+    return byId('a').color === '#3d8bd4' && el.classList.contains('c-custom') && el.style.getPropertyValue('--nc') === '#3d8bd4';
+  }));
+  check('node hex colour + rect/diamond kind round-trip through serialize', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null, color: '#3d8bd4', kind: 'diamond' }], edges: [] };
+    const back = LocalOffice.parse(LocalOffice.stringify(exportData())).envelope;
+    return back.body.nodes[0].color === '#3d8bd4' && back.body.nodes[0].kind === 'diamond';
+  }));
+  check('named colours still work (c-blue class)', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }], edges: [] }; selectedId = 'a'; render();
+    setNodeColor('blue'); return document.querySelector('.node[data-id="a"]').classList.contains('c-blue');
+  }));
+  check('rectangle + diamond shapes apply their classes', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }], edges: [] }; selectedId = 'a'; render();
+    setNodeKind('rect'); const rectOk = document.querySelector('.node[data-id="a"]').classList.contains('shape-rect');
+    setNodeKind('diamond'); const diaOk = document.querySelector('.node[data-id="a"]').classList.contains('shape-diamond');
+    return rectOk && diaOk && isShape('rect') && isShape('diamond');
+  }));
+  check('the colour palette popover opens with swatches + a custom picker', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }], edges: [] }; selectedId = 'a'; render();
+    toggleColorPop(); const pop = document.getElementById('color-pop');
+    const ok = !pop.classList.contains('hidden') && pop.querySelectorAll('.cp-grid button').length >= 12 && !!document.getElementById('color-custom');
+    hideColorPop(); return ok;
+  }));
+  // ── shape nodes stay canvas-positioned (the "arrow points to empty space" bug) ──
+  check('a triangle node stays absolutely positioned at its x,y centre (links reach it)', await page.evaluate(() => {
+    data = { nodes: [{ id: 'b', text: 'D', x: 700, y: 520, parent: null, kind: 'triangle' }], edges: [] };
+    panX = 0; panY = 0; zoom = 1; applyView(); render();
+    const el = document.querySelector('.node[data-id="b"]');
+    if (getComputedStyle(el).position !== 'absolute') return false;
+    const nb = el.getBoundingClientRect(), wb = document.getElementById('world').getBoundingClientRect();
+    return Math.abs((nb.left + nb.width / 2 - wb.left) - 700) < 6 && Math.abs((nb.top + nb.height / 2 - wb.top) - 520) < 6;
+  }));
+  // ── node size range (A− / A+) ──
+  check('A+/A− resizes a node across an extended range (xs…xxl)', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }], edges: [] }; selectedId = 'a'; render();
+    for (let i = 0; i < 5; i++) setNodeFont(1); const big = byId('a').size;
+    for (let i = 0; i < 8; i++) setNodeFont(-1); const small = byId('a').size;
+    return big === 'xxl' && small === 'xs';
+  }));
+  // ── drag an endpoint to re-connect (Visio-style) ──
+  check('re-connecting a cross-link endpoint re-points it to another node', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }, { id: 'b', text: 'B', x: 200, y: 0, parent: null }, { id: 'c', text: 'C', x: 400, y: 0, parent: null }], edges: [{ from: 'a', to: 'b', style: 'arrow' }] };
+    render(); selectEdge(0); reconnectEndpoint('to', 'c');
+    return data.edges[0].from === 'a' && data.edges[0].to === 'c';
+  }));
+  check('re-connecting a parent connection re-parents the child', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }, { id: 'b', text: 'B', x: 200, y: 0, parent: 'a' }, { id: 'c', text: 'C', x: 400, y: 0, parent: null }], edges: [] };
+    render(); selectParentLink('b'); reconnectEndpoint('parent', 'c');
+    return byId('b').parent === 'c';
+  }));
+  check('re-parenting onto a descendant is blocked (no cycle)', await page.evaluate(() => {
+    data = { nodes: [{ id: 'a', text: 'A', x: 0, y: 0, parent: null }, { id: 'b', text: 'B', x: 200, y: 0, parent: 'a' }, { id: 'c', text: 'C', x: 400, y: 0, parent: 'b' }], edges: [] };
+    render(); selectParentLink('b'); reconnectEndpoint('parent', 'c');   // c is b's descendant → refused
+    return byId('b').parent === 'a';
+  }));
 
   console.log(`\n\n${pass} passed, ${fail} failed`);
   if (fails.length) { console.log('Failures:'); fails.forEach(f => console.log('  ✗ ' + f)); }

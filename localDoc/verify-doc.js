@@ -234,6 +234,42 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
   check('AI distill previews then fills only valid sections', ai.previewShown === true && /alert fired/.test(ai.timeline) && /cause was X/.test(ai.root));
   check('detect fails gracefully when Ollama is down', await page.evaluate(async () => { window.__mock.failTags = true; await AI.detect(); window.__mock.failTags = false; return document.getElementById('ai-status').classList.contains('err'); }));
 
+  // ── AI GENERATE a whole document (mocked Ollama) → preview → apply → kernel gates ──
+  const gen = await page.evaluate(async () => {
+    window.__mock.gen = JSON.stringify({ format: 'localoffice/v1', type: 'doc', meta: { title: 'Gen RCA' }, body: { docMode: 'compliance', blocks: [
+      { id: 'a', heading: 'Root cause', text: 'the cause was a stale cache', required: ['cause'] },
+      { id: 'b', heading: 'Mitigation', text: 'we restarted the box', required: ['patch', 'deploy'] } ] } });
+    data = blankDoc(); render();
+    document.getElementById('ai-gen-input').value = 'an incident RCA in compliance mode';
+    await aiGenerate();
+    const pv = document.getElementById('ai-gen-preview');
+    const previewShown = !pv.classList.contains('hidden') && /Root cause/.test(pv.textContent) && /gated: patch, deploy/.test(pv.textContent);
+    aiGenApply();
+    const applied = title === 'Gen RCA' && data.blocks.length === 2 && data.blocks[1].heading === 'Mitigation' && data.blocks[1].required.join(',') === 'patch,deploy' && data.docMode === 'compliance';
+    const kernelGates = canExport() === false && lintReport().rows.some(r => r.heading === 'Mitigation' && !r.pass);   // Mitigation text lacks patch/deploy → blocked
+    return { previewShown, applied, kernelGates };
+  });
+  check('AI generate: previews sections + gating', gen.previewShown === true);
+  check('AI generate: Apply replaces the whole document', gen.applied === true);
+  check('AI generate: the kernel still gates the AI-drafted doc (not the model)', gen.kernelGates === true);
+  // robustness: a small model that returns a BARE body (no envelope) still applies
+  check('AI generate: accepts a bare body from a small model', await page.evaluate(async () => {
+    window.__mock.gen = JSON.stringify({ docMode: 'prose', blocks: [{ id: 'x', heading: 'Goals', text: 'ship it', required: [] }] });
+    data = blankDoc(); render();
+    document.getElementById('ai-gen-input').value = 'a design doc'; await aiGenerate(); aiGenApply();
+    return data.blocks.length === 1 && data.blocks[0].heading === 'Goals' && !canExport() === false;   // prose, no gates → export open
+  }));
+
+  // ── JSON panel Apply replaces the WHOLE document (blocks + mode + title), not just a field ──
+  check('JSON panel Apply loads a full new document (blocks/mode/title all replaced)', await page.evaluate(async () => {
+    data = { docMode: 'prose', style: {}, blocks: [{ id: 'old', heading: 'Old', text: 'x', required: [] }] }; title = 'Old'; render();
+    const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'JSON'); btn.click();
+    const jp = document.getElementById('jp'), ta = jp.querySelector('textarea');
+    ta.value = JSON.stringify({ format: 'localoffice/v1', type: 'doc', meta: { title: 'New' }, body: { docMode: 'compliance', blocks: [{ id: 'n1', heading: 'A', text: 'aa', required: [] }, { id: 'n2', heading: 'B', text: 'bb', required: ['x'] }] } });
+    jp.querySelector('[data-a="apply"]').click(); await new Promise(r => setTimeout(r, 60));
+    return title === 'New' && data.blocks.length === 2 && data.blocks[1].heading === 'B' && data.docMode === 'compliance';
+  }));
+
   // ── File System Access round-trip (mocked picker) ──
   const frt = await page.evaluate(async () => {
     data = { blocks: [{ id: 'z', heading: 'Summary', text: 'ok', required: [] }] }; title = 'FS Doc';
@@ -386,6 +422,19 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
     ta.value = '{ not valid'; jp.querySelector('[data-a="apply"]').click();
     const guarded = title === 'Doc B' && /Not applied/.test(jp.querySelector('[data-i]').textContent);
     return shown && applied && guarded;
+  }));
+
+  // ── JSON panel: the "build with any LLM" prompt toggle ──
+  check('JSON panel has a Prompt toggle that shows the tool schema, then returns to JSON', await page.evaluate(async () => {
+    data = { docMode: 'prose', style: {}, blocks: [{ id: '1', heading: '', text: 'hi', required: [] }] }; title = 'P'; render();
+    const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'JSON'); btn.click();
+    const jp = document.getElementById('jp'), ta = jp.querySelector('textarea'), pb = jp.querySelector('[data-a="prompt"]');
+    if (!pb || pb.hidden) return false;
+    pb.click();                                   // show the build prompt
+    const promptShown = ta.value.includes('localoffice/v1') && ta.value.includes('<describe the document you want') && /Markdown/.test(ta.value);
+    pb.click();                                   // back to the live JSON
+    const backToJson = ta.value.includes('"format"') && !ta.value.includes('<describe');
+    return promptShown && backToJson;
   }));
 
   // ── undo / redo (reliable, both modes) ──
@@ -565,6 +614,110 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
   }));
 
   check('dark/light toggle flips the body class', await page.evaluate(() => { const a = document.body.classList.contains('dark'); toggleTheme(); const b = document.body.classList.contains('dark'); toggleTheme(); return a !== b; }));
+
+  // ── embedded objects: a doc hosting another tool's object, drawn by the shared LocalRender ──
+  check('localDoc uses the shared LocalRender module', await page.evaluate(() => typeof LocalRender === 'object' && typeof LocalRender.render === 'function'));
+  const emb = await page.evaluate(() => {
+    data = { docMode: 'prose', style: {}, blocks: [{ id: 't', heading: 'Intro', text: 'hi', required: [] }] };
+    const b = addEmbedBlock({ format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Arch' }, body: { nodes: [{ id: 'r', text: 'Root', parent: null, x: 0, y: 0 }, { id: 'a', text: 'Added', parent: 'r', x: 120, y: 60 }], edges: [] } });
+    const el = document.querySelector('.block[data-id="' + b.id + '"]');
+    const rend = el.querySelector('.embed-render');
+    // static render on the page (no inline live iframe), edited via a modal instead
+    const staticSvg = !!rend && rend.innerHTML.indexOf('<svg') >= 0 && rend.innerHTML.indexOf('Root') >= 0;
+    const noInlineFrame = !el.querySelector('iframe');
+    // open the live editor and stream an edit back
+    openEmbedEditor(b);
+    const modalOpen = !!(document.getElementById('embed-editor') && document.getElementById('embed-editor').classList.contains('on'));
+    const fr = document.querySelector('#embed-editor .ee-frame');
+    const edited = { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Arch2' }, body: { nodes: [{ id: 'r', text: 'Root', parent: null, x: 0, y: 0 }, { id: 'a', text: 'A', parent: 'r', x: 120, y: 60 }, { id: 'c', text: 'C', parent: 'r', x: -120, y: 60 }], edges: [] } };
+    window.dispatchEvent(new MessageEvent('message', { data: { proto: 'localoffice', type: 'embedState', text: JSON.stringify(edited) }, source: fr.contentWindow }));
+    const cached = byId(b.id).embed.envelope;
+    closeEmbedEditor();
+    const env = exportData(); const back = LocalOffice.parse(LocalOffice.serialize(env)).envelope;
+    const eb = back.body.blocks.find(x => x.embed);
+    return { staticSvg, noInlineFrame, modalOpen, cachedNodes: cached.body.nodes.length, cachedTitle: cached.meta.title,
+             rtType: eb && eb.embed.envelope.type, rtNodes: eb && eb.embed.envelope.body.nodes.length, rtTitle: eb && eb.embed.envelope.meta.title, rtValid: LocalOffice.validate(env).ok };
+  });
+  check('+ Embed draws the object inline via LocalRender (SVG), no inline iframe', emb.staticSvg && emb.noInlineFrame);
+  check('double-click / Edit opens a live editor modal', emb.modalOpen);
+  check('an edit in the modal (embedState) updates the cached nested envelope', emb.cachedNodes === 3 && emb.cachedTitle === 'Arch2');
+  check('save/load round-trips the embedded object AND its edits (state carryover)', emb.rtType === 'mindmap' && emb.rtNodes === 3 && emb.rtTitle === 'Arch2' && emb.rtValid === true);
+
+  // real nested-iframe handoff: the modal editor actually loads the real tool with the object
+  await page.evaluate(() => { data = { docMode: 'prose', style: {}, blocks: [] }; const b = addEmbedBlock({ format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Live' }, body: { nodes: [{ id: 'r', text: 'Root', parent: null, x: 0, y: 0 }, { id: 'x', text: 'Leaf', parent: 'r', x: 90, y: 50 }], edges: [] } }); openEmbedEditor(b); });
+  let liveNodes = -1, liveOk = false;
+  for (let i = 0; i < 24; i++) {
+    const fr = page.frames().find(f => /localMindMap/i.test(f.url()));
+    if (fr) { try { liveNodes = await fr.evaluate(() => (typeof data === 'object' && data && Array.isArray(data.nodes)) ? data.nodes.length : -1); } catch (e) {} if (liveNodes >= 0) { liveOk = true; break; } }
+    await page.waitForTimeout(150);
+  }
+  check('the live editor modal loads the real tool + hands it the object (2 nodes)', liveOk && liveNodes === 2);
+  await page.evaluate(() => closeEmbedEditor());
+
+  // a sheet embeds as a real TABLE inline (author tables in sheets, show in the doc)
+  check('a sheet embed renders as a real table inline + round-trips', await page.evaluate(() => {
+    data = { docMode: 'prose', style: {}, blocks: [] };
+    const b = addEmbedBlock({ format: 'localoffice/v1', type: 'sheet', meta: { title: 'Data' }, body: { sheets: [{ name: 'S', cells: { A1: { v: 'Item' }, B1: { v: 'Qty' }, A2: { v: 'Bolt' }, B2: { v: 4 } } }] } });
+    const rend = document.querySelector('.block[data-id="' + b.id + '"] .embed-render');
+    const table = !!rend && rend.innerHTML.indexOf('<table') >= 0 && rend.innerHTML.indexOf('Item') >= 0 && rend.innerHTML.indexOf('Bolt') >= 0;
+    const back = LocalOffice.parse(LocalOffice.serialize(exportData())).envelope; const eb = back.body.blocks.find(x => x.embed);
+    return table && !!(eb && eb.embed.envelope.type === 'sheet' && eb.embed.envelope.body.sheets[0].cells.B2.v === 4);
+  }));
+
+  // graceful degradation: a type with no editor still renders (LocalRender card) + preserves data
+  const deg = await page.evaluate(() => {
+    data = { docMode: 'prose', style: {}, blocks: [] };
+    const b = addEmbedBlock({ format: 'localoffice/v1', type: 'weirdtype', meta: { title: 'Mystery' }, body: { foo: 1 } });
+    const el = document.querySelector('.block[data-id="' + b.id + '"]');
+    const hasPh = !!el.querySelector('.embed-ph'), noFrame = !el.querySelector('iframe'), rendered = !!el.querySelector('.embed-render');
+    const back = LocalOffice.parse(LocalOffice.serialize(exportData())).envelope;
+    const eb = back.body.blocks.find(x => x.embed);
+    return { hasPh, noFrame, rendered, kept: !!(eb && eb.embed.envelope.type === 'weirdtype' && eb.embed.envelope.body.foo === 1) };
+  });
+  check('an embed whose tool is unavailable still renders (card) + shows a note, no iframe', deg.hasPh && deg.noFrame && deg.rendered);
+  check('unavailable embed still round-trips its data (forward-compat)', deg.kept === true);
+
+  // ✦ Prompt is embed-aware, and an LLM-authored doc with an embed block applies + renders
+  check('localDoc ✦ Prompt teaches embedding (sheet table + mind-map FSM)', await page.evaluate(() =>
+    LOCALDOC_PROMPT.indexOf('"embed"') >= 0 && LOCALDOC_PROMPT.toLowerCase().indexOf('sheet') >= 0 && LOCALDOC_PROMPT.toLowerCase().indexOf('finite-state') >= 0));
+  check('an LLM-authored doc with an embed block applies + renders', await page.evaluate(() => {
+    applyOpened({ format: 'localoffice/v1', type: 'doc', meta: { title: 'Gen' }, body: { docMode: 'prose', blocks: [
+      { id: 'a', heading: 'Overview', text: 'text', required: [] },
+      { id: 'b', embed: { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'Nums' }, body: { sheets: [{ name: 'S', cells: { A1: { v: 'K' }, B1: { v: 'V' }, A2: { v: 'x' }, B2: { v: 9 } } }] } } } }
+    ] } });
+    const eb = data.blocks.find(x => x.embed);
+    const rend = document.querySelector('.block[data-id="' + eb.id + '"] .embed-render');
+    return !!(eb && eb.embed.envelope.type === 'sheet') && !!rend && rend.innerHTML.indexOf('<table') >= 0;
+  }));
+
+  // markdown export references embedded objects by title (does not dump raw JSON)
+  const embMd = await page.evaluate(() => { data = { docMode: 'prose', style: {}, blocks: [{ id: 'a', heading: 'Intro', text: 'hello', required: [] }] }; addEmbedBlock({ format: 'localoffice/v1', type: 'runbook', meta: { title: 'Bring-up' }, body: { steps: [] } }); return toMarkdown(); });
+  check('markdown export references the embedded object by title', embMd.includes('## Bring-up') && embMd.toLowerCase().includes('embedded runbook'));
+
+  // embedded objects are visibly rendered inline (non-zero geometry)
+  check('localDoc: an embedded sheet is a visibly-sized table inline', await page.evaluate(() => {
+    data = { docMode: 'prose', style: {}, blocks: [] };
+    const b = addEmbedBlock({ format: 'localoffice/v1', type: 'sheet', meta: { title: 'T' }, body: { sheets: [{ name: 'S', cells: { A1: { v: 'H' }, A2: { v: 'v' } } }] } });
+    const t = document.querySelector('.block[data-id="' + b.id + '"] .embed-render table'); if (!t) return false; const r = t.getBoundingClientRect(); return r.width > 5 && r.height > 5;
+  }));
+  check('localDoc: an embedded mind map is a visibly-sized SVG inline', await page.evaluate(() => {
+    data = { docMode: 'prose', style: {}, blocks: [] };
+    const b = addEmbedBlock({ format: 'localoffice/v1', type: 'mindmap', meta: { title: 'M' }, body: { nodes: [{ id: 'a', text: 'A', parent: null, x: 0, y: 0 }, { id: 'b', text: 'B', parent: 'a', x: 120, y: 60 }], edges: [] } });
+    const g = document.querySelector('.block[data-id="' + b.id + '"] .embed-render svg'); if (!g) return false; const r = g.getBoundingClientRect(); return r.width > 20 && r.height > 20;
+  }));
+  check('localDoc: A+/A− scales an embedded object\'s font size', await page.evaluate(() => {
+    data = { docMode: 'prose', style: {}, blocks: [] };
+    const b = addEmbedBlock({ format: 'localoffice/v1', type: 'sheet', meta: { title: 'T' }, body: { sheets: [{ cells: { A1: { v: 'x' } } }] } });
+    b.embed.scale = 1.5; render();
+    const rend = document.querySelector('.block[data-id="' + b.id + '"] .embed-render');
+    return !!rend && Math.abs(parseFloat(getComputedStyle(rend).fontSize) - 39) < 1.5;   // 26px * 1.5
+  }));
+  // live host×child: the doc editor modal boots the REAL Sheet tool with the object
+  await page.evaluate(() => { data = { docMode: 'prose', style: {}, blocks: [] }; const b = addEmbedBlock({ format: 'localoffice/v1', type: 'sheet', meta: { title: 'S' }, body: { sheets: [{ name: 'S', cells: { A1: { v: 'x' } } }] } }); openEmbedEditor(b); });
+  let docSheetOk = false;
+  for (let i = 0; i < 26; i++) { const fr = page.frames().find(f => /localSheets/i.test(f.url())); if (fr) { try { docSheetOk = await fr.evaluate(() => typeof Store === 'object' && !!(Store.data && Store.data.sheets)); } catch (e) {} if (docSheetOk) break; } await page.waitForTimeout(150); }
+  await page.evaluate(() => closeEmbedEditor());
+  check('localDoc modal boots the real Sheet tool with the object', docSheetOk);
 
   console.log(`\n\n${pass} passed, ${fail} failed`);
   if (fails.length) { console.log('Failures:'); fails.forEach(f => console.log('  ✗ ' + f)); }

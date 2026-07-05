@@ -303,7 +303,7 @@ single-file model.
 ```
 localPlan/
 ├── index.html              # The entire application (inlines the shared LocalOffice core)
-├── verify-plan.js          # Headless (Playwright) verification (51 checks, incl. undo/redo, mocked-Ollama AI + mocked-FS round-trip)
+├── verify-plan.js          # Headless (Playwright) verification (55 checks, incl. undo/redo, mocked-Ollama AI + mocked-FS round-trip)
 ├── braindump.py            # Optional bulk import script
 ├── braindump.example.txt   # Example brain dump showing all syntax
 ├── ai/SYSTEM_PROMPT.md     # System prompt for local LLM integration

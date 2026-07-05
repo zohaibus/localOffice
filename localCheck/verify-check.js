@@ -223,6 +223,73 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
   // ── theme ──
   check('dark/light toggle flips the body class', await page.evaluate(() => { const a = document.body.classList.contains('dark'); toggleTheme(); const b = document.body.classList.contains('dark'); toggleTheme(); return a !== b; }));
 
+  check('JSON panel Prompt toggle shows the runbook schema, then returns to JSON', await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'JSON'); btn.click();
+    const jp = document.getElementById('jp'), ta = jp.querySelector('textarea'), pb = jp.querySelector('[data-a="prompt"]');
+    if (!pb || pb.hidden) return false;
+    pb.click();
+    const shown = ta.value.includes('localoffice/v1') && ta.value.includes('"type": "runbook"') && ta.value.includes('<describe the runbook you want');
+    pb.click();
+    return shown && ta.value.includes('"format"') && !ta.value.includes('<describe the runbook you want');
+  }));
+  check('a schema-shaped runbook applies and gates sign-off', await page.evaluate(() => {
+    applyOpened({ format: 'localoffice/v1', type: 'runbook', meta: { title: 'Gen' }, body: { steps: [
+      { id: 's1', kind: 'check', text: 'inspect', done: false },
+      { id: 's2', kind: 'measure', text: 'voltage', comparator: 'tolerance', params: { min: 1.1, max: 1.2 }, value: '1.3' } ] } });
+    return data.steps.length === 2 && canSignOff() === false;
+  }));
+
+  check('AI panel opens, detects a model, generates a runbook and applies it (mocked Ollama)', await page.evaluate(async () => {
+    const env = { format: 'localoffice/v1', type: 'runbook', meta: { title: 'Bring-up' }, body: { steps: [
+      { id: 's1', kind: 'check', text: 'inspect board' },
+      { id: 's2', kind: 'measure', text: 'rail voltage', comparator: 'tolerance', params: { min: 3.2, max: 3.4 } } ] } };
+    window.fetch = async (u) => { u = String(u);
+      if (u.indexOf('/api/tags') >= 0) return { ok: true, json: async () => ({ models: [{ name: 'm' }] }) };
+      if (u.indexOf('/api/generate') >= 0) return { ok: true, json: async () => ({ response: JSON.stringify(env) }) };
+      return { ok: false, status: 404 }; };
+    AI.show(); await new Promise(r => setTimeout(r, 25));
+    const panelOpen = document.getElementById('ai-panel').classList.contains('on');
+    const modelDetected = document.getElementById('ai-model').value === 'm';
+    document.getElementById('gen-input').value = 'a board bring-up runbook';
+    await ogRun();
+    const previewShown = !document.getElementById('gen-apply').classList.contains('hidden');
+    ogApply();
+    return panelOpen && modelDetected && previewShown && data.steps.length === 2 && data.steps[1].kind === 'measure';
+  }));
+
+  check('Embeds host: + Add embeds an object (LocalRender preview) + modal edit; round-trip preserves body.embeds', await page.evaluate(() => {
+    EmbedHost.open();
+    const sel = document.querySelector('#eh [data-a="add"]'); if (!sel) return false;
+    sel.value = 'mindmap'; sel.dispatchEvent(new Event('change'));
+    const arr = data.embeds; const added = Array.isArray(arr) && arr.length === 1 && arr[0].envelope.type === 'mindmap';
+    const noDrawerIframe = !document.querySelector('#eh iframe');
+    const prev = document.querySelector('#eh .eh-prev'); const previewShown = !!prev && prev.innerHTML.length > 0;
+    document.querySelector('#eh .eh-edit').click();
+    const modalOpen = !!(document.getElementById('eh-editor') && document.getElementById('eh-editor').classList.contains('on'));
+    const fr = document.querySelector('#eh-editor .ee-frame');
+    const edited = { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Sub' }, body: { nodes: [{ id: 'r', text: 'R', parent: null, x: 0, y: 0 }, { id: 'a', text: 'A', parent: 'r', x: 80, y: 40 }], edges: [] } };
+    window.dispatchEvent(new MessageEvent('message', { data: { proto: 'localoffice', type: 'embedState', text: JSON.stringify(edited) }, source: fr.contentWindow }));
+    const cached = data.embeds[0].envelope.body.nodes.length === 2;
+    const back = LocalOffice.parse(LocalOffice.stringify(exportData())).envelope;
+    const rt = back.body.embeds && back.body.embeds.length === 1 && back.body.embeds[0].envelope.type === 'mindmap' && back.body.embeds[0].envelope.body.nodes.length === 2;
+    const hasBtn = [...document.querySelectorAll('button')].some(b => b.textContent.indexOf('Embeds') >= 0);
+    return added && noDrawerIframe && previewShown && modalOpen && cached && rt && hasBtn;
+  }));
+
+  // drawer: a LocalRender preview is visibly rendered, and Edit boots the real tool
+  check('drawer: an embedded sheet preview is a visibly-sized table (LocalRender)', await page.evaluate(() => {
+    data = { steps: [] }; data.embeds = [];
+    EmbedHost.open();
+    const sel = document.querySelector('#eh [data-a="add"]'); sel.value = 'sheet'; sel.dispatchEvent(new Event('change'));
+    data.embeds[data.embeds.length - 1].envelope.body = { sheets: [{ name: 'S', cells: { A1: { v: 'H' }, A2: { v: 'v' } } }] };
+    EmbedHost.open();   // re-render the drawer with the populated sheet
+    const t = document.querySelector('#eh .eh-prev table'); if (!t) return false; const r = t.getBoundingClientRect(); return r.width > 5 && r.height > 5;
+  }));
+  await page.evaluate(() => { const ed = document.querySelector('#eh .eh-edit'); if (ed) ed.click(); });
+  let drawerSheetOk = false;
+  for (let i = 0; i < 26; i++) { const fr = page.frames().find(f => /localSheets/i.test(f.url())); if (fr) { try { drawerSheetOk = await fr.evaluate(() => typeof Store === 'object' && !!(Store.data && Store.data.sheets)); } catch (e) {} if (drawerSheetOk) break; } await page.waitForTimeout(150); }
+  check('drawer: Edit boots the real Sheet tool with the object (live host×child)', drawerSheetOk);
+
   console.log(`\n\n${pass} passed, ${fail} failed`);
   if (fails.length) { console.log('Failures:'); fails.forEach(f => console.log('  ✗ ' + f)); }
   await browser.close();

@@ -472,6 +472,50 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
   });
   check('JSON inspector text contrasts with its background (theme vars resolve)', jp.delta > 80);
 
+  check('JSON panel Prompt toggle shows the flashcards schema, then returns to JSON', await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'JSON'); btn.click();
+    const jp = document.getElementById('jp'), ta = jp.querySelector('textarea'), pb = jp.querySelector('[data-a="prompt"]');
+    if (!pb || pb.hidden) return false;
+    pb.click();
+    const shown = ta.value.includes('localoffice/v1') && ta.value.includes('"type": "flashcards"') && ta.value.includes('<describe the deck you want');
+    pb.click();
+    return shown && ta.value.includes('"format"') && !ta.value.includes('<describe the deck you want');
+  }));
+  check('a schema-shaped flashcards file applies and renders', await page.evaluate(() => {
+    applyOpenedCards({ format: 'localoffice/v1', type: 'flashcards', meta: { title: 'Gen Deck' }, body: { deck: { name: 'Gen' }, scheduler: 'fsrs-lite', cards: [{ id: 'c1', front: '2+2?', back: '4' }, { id: 'c2', front: 'Capital of France?', back: 'Paris' }] } }, null);
+    return deck.body.cards.length === 2 && deck.meta.title === 'Gen Deck' && deck.body.cards[1].back === 'Paris';
+  }));
+
+  check('AI in-app Generate drafts a deck and applies it (mocked Ollama)', await page.evaluate(async () => {
+    const env = { format: 'localoffice/v1', type: 'flashcards', meta: { title: 'Gen Deck' }, body: { deck: { name: 'Gen' }, scheduler: 'fsrs-lite', cards: [{ id: 'c1', front: '2+2?', back: '4' }, { id: 'c2', front: 'Capital of France?', back: 'Paris' }] } };
+    const sel = document.getElementById('ai-model'); sel.innerHTML = '<option value="m">m</option>'; sel.value = 'm';
+    window.fetch = async (u) => { u = String(u); if (u.indexOf('/api/generate') >= 0) return { ok: true, json: async () => ({ response: JSON.stringify(env) }) }; return { ok: false, status: 404 }; };
+    document.getElementById('gen-input').value = 'basic arithmetic and capitals';
+    await ogRun();
+    const previewShown = !document.getElementById('gen-apply').classList.contains('hidden');
+    ogApply();
+    return previewShown && deck.body.cards.length === 2 && deck.meta.title === 'Gen Deck' && deck.body.cards[1].back === 'Paris';
+  }));
+
+  check('Embeds host: + Add embeds an object (LocalRender preview) + modal edit; round-trip preserves body.embeds', await page.evaluate(() => {
+    EmbedHost.open();
+    const sel = document.querySelector('#eh [data-a="add"]'); if (!sel) return false;
+    sel.value = 'mindmap'; sel.dispatchEvent(new Event('change'));
+    const arr = deck.body.embeds; const added = Array.isArray(arr) && arr.length === 1 && arr[0].envelope.type === 'mindmap';
+    const noDrawerIframe = !document.querySelector('#eh iframe');
+    const prev = document.querySelector('#eh .eh-prev'); const previewShown = !!prev && prev.innerHTML.length > 0;
+    document.querySelector('#eh .eh-edit').click();
+    const modalOpen = !!(document.getElementById('eh-editor') && document.getElementById('eh-editor').classList.contains('on'));
+    const fr = document.querySelector('#eh-editor .ee-frame');
+    const edited = { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Sub' }, body: { nodes: [{ id: 'r', text: 'R', parent: null, x: 0, y: 0 }, { id: 'a', text: 'A', parent: 'r', x: 80, y: 40 }], edges: [] } };
+    window.dispatchEvent(new MessageEvent('message', { data: { proto: 'localoffice', type: 'embedState', text: JSON.stringify(edited) }, source: fr.contentWindow }));
+    const cached = deck.body.embeds[0].envelope.body.nodes.length === 2;
+    const back = LocalOffice.parse(LocalOffice.stringify(deck)).envelope;
+    const rt = back.body.embeds && back.body.embeds.length === 1 && back.body.embeds[0].envelope.type === 'mindmap' && back.body.embeds[0].envelope.body.nodes.length === 2;
+    const hasBtn = [...document.querySelectorAll('button')].some(b => b.textContent.indexOf('Embeds') >= 0);
+    return added && noDrawerIframe && previewShown && modalOpen && cached && rt && hasBtn;
+  }));
+
   console.log(`\n\n${pass} passed, ${fail} failed`);
   if (fails.length) { console.log('Failures:'); fails.forEach(f => console.log('  ✗ ' + f)); }
   await browser.close();

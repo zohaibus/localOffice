@@ -329,6 +329,50 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
     return data.planTitle === 'Fresh' && document.getElementById('undo-btn').disabled === true;
   }));
 
+  check('JSON panel Prompt toggle shows the plan schema, then returns to JSON', await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'JSON'); btn.click();
+    const jp = document.getElementById('jp'), ta = jp.querySelector('textarea'), pb = jp.querySelector('[data-a="prompt"]');
+    if (!pb || pb.hidden) return false;
+    pb.click();
+    const shown = ta.value.includes('localoffice/v1') && ta.value.includes('"type": "plan"') && ta.value.includes('<describe the plan you want');
+    pb.click();
+    return shown && ta.value.includes('"format"') && !ta.value.includes('<describe the plan you want');
+  }));
+  check('a schema-shaped plan applies and renders', await page.evaluate(() => {
+    applyOpenedPlan({ type: 'plan', meta: { title: 'Gen' }, body: { planTitle: 'Gen', tracks: [{ id: 't1', icon: 'W', title: 'Work', open: true, sections: [{ name: 'Now', horizon: 'now', items: [{ id: 'i1', text: 'ship it', priority: true }] }] }] } }, null);
+    return data.tracks.length === 1 && data.tracks[0].sections[0].items[0].text === 'ship it';
+  }));
+
+  check('AI in-app Generate drafts a plan and applies it (mocked Ollama)', await page.evaluate(async () => {
+    const env = { format: 'localoffice/v1', type: 'plan', meta: { title: 'Gen' }, body: { planTitle: 'Gen', tracks: [{ id: 't1', icon: 'W', title: 'Work', open: true, sections: [{ name: 'Now', horizon: 'now', items: [{ id: 'i1', text: 'ship it', priority: true }] }] }] } };
+    const sel = document.getElementById('ai-model'); sel.innerHTML = '<option value="m">m</option>'; sel.value = 'm';
+    window.fetch = async (u) => { u = String(u); if (u.indexOf('/api/generate') >= 0) return { ok: true, json: async () => ({ response: JSON.stringify(env) }) }; return { ok: false, status: 404 }; };
+    document.getElementById('gen-input').value = 'a small work plan';
+    await ogRun();
+    const previewShown = !document.getElementById('gen-apply').classList.contains('hidden');
+    ogApply();
+    return previewShown && data.tracks.length === 1 && data.tracks[0].sections[0].items[0].text === 'ship it';
+  }));
+
+  check('Embeds host: + Add embeds an object (LocalRender preview) + modal edit; round-trip preserves body.embeds', await page.evaluate(() => {
+    EmbedHost.open();
+    const sel = document.querySelector('#eh [data-a="add"]'); if (!sel) return false;
+    sel.value = 'mindmap'; sel.dispatchEvent(new Event('change'));
+    const arr = data.embeds; const added = Array.isArray(arr) && arr.length === 1 && arr[0].envelope.type === 'mindmap';
+    const noDrawerIframe = !document.querySelector('#eh iframe');
+    const prev = document.querySelector('#eh .eh-prev'); const previewShown = !!prev && prev.innerHTML.length > 0;
+    document.querySelector('#eh .eh-edit').click();
+    const modalOpen = !!(document.getElementById('eh-editor') && document.getElementById('eh-editor').classList.contains('on'));
+    const fr = document.querySelector('#eh-editor .ee-frame');
+    const edited = { format: 'localoffice/v1', type: 'mindmap', meta: { title: 'Sub' }, body: { nodes: [{ id: 'r', text: 'R', parent: null, x: 0, y: 0 }, { id: 'a', text: 'A', parent: 'r', x: 80, y: 40 }], edges: [] } };
+    window.dispatchEvent(new MessageEvent('message', { data: { proto: 'localoffice', type: 'embedState', text: JSON.stringify(edited) }, source: fr.contentWindow }));
+    const cached = data.embeds[0].envelope.body.nodes.length === 2;
+    const back = LocalOffice.parse(LocalOffice.stringify(planEnvelope())).envelope;
+    const rt = back.body.embeds && back.body.embeds.length === 1 && back.body.embeds[0].envelope.type === 'mindmap' && back.body.embeds[0].envelope.body.nodes.length === 2;
+    const hasBtn = [...document.querySelectorAll('button')].some(b => b.textContent.indexOf('Embeds') >= 0);
+    return added && noDrawerIframe && previewShown && modalOpen && cached && rt && hasBtn;
+  }));
+
   console.log(`\n\n${pass} passed, ${fail} failed`);
   if (fails.length) { console.log('Failures:'); fails.forEach(f => console.log('  ✗ ' + f)); }
   await browser.close();

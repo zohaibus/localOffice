@@ -22,7 +22,7 @@ JSON file on your disk.
 
 ## What it is
 
-LocalSheets is a full multi-sheet spreadsheet in one HTML file (about 270 KB),
+LocalSheets is a full multi-sheet spreadsheet in one HTML file (about 305 KB),
 with zero dependencies and no build step. Workbooks are plain JSON: `git diff`
 works on them, you can read or edit one in a text editor, and the whole product is
 one file you can mirror, fork, archive, and run on an air-gapped laptop.
@@ -122,7 +122,7 @@ Expected: exactly two `fetch` lines, both to `localhost:11434`.
 
 ```
 localSheets/
-├── localsheets.html        # The app (single file, about 270 KB)
+├── localsheets.html        # The app (single file, about 305 KB)
 ├── verify-localsheets.js   # Headless (Playwright) verification of the shipped app
 ├── check-templates.js      # Per-template health report (diagnostic)
 ├── src/                    # Un-bundled engine + store + envelope adapter + unit tests

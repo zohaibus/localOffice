@@ -684,6 +684,22 @@ const JsonPanel = (function () {
 })();
 JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpened(LocalOffice.parse(t).envelope) });
 
+// ── embed-as-live-object: when a host tool embeds this file, feed edits back (state carryover) ──
+(function () {
+  if (window.parent === window) return;
+  var embedded = false, tmr = null;
+  function serialize() { return LocalOffice.stringify(exportData()); }
+  function push(target) { try { (target || window.parent).postMessage({ proto: 'localoffice', type: 'embedState', text: serialize() }, '*'); } catch (_) {} }
+  function schedule() { if (!embedded) return; clearTimeout(tmr); tmr = setTimeout(function () { push(); }, 400); }
+  window.addEventListener('message', function (e) {
+    var m = e.data; if (!m || m.proto !== 'localoffice') return;
+    if (m.type === 'open' && m.embedded) { embedded = true; document.body.classList.add('lo-embedded'); }
+    else if (m.type === 'embedFlush') { push(e.source || window.parent); }
+  });
+  ['input', 'change', 'keyup', 'pointerup'].forEach(function (ev) { document.addEventListener(ev, schedule, true); });
+  var st = document.createElement('style'); st.textContent = '.lo-embedded{padding:0!important}'; document.head.appendChild(st);
+})();
+
 if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localMark' }, '*');
 </script>
 </body>

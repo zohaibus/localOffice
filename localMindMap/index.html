@@ -114,8 +114,29 @@
   #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   #edges { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
   #edges path.link { fill: none; stroke: var(--link); stroke-width: 2; }
-  #edges path.xlink { fill: none; stroke: var(--gold); stroke-width: 2; stroke-dasharray: 5 4; opacity: .85; }
-  #edges text.xlabel { fill: var(--ink-2); font-size: 12px; font-family: inherit; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
+  #edges path.xlink { fill: none; stroke: var(--gold); stroke-width: 2; opacity: .9; }
+  #edges path.xlink.sel { stroke: var(--accent); stroke-width: 2.6; opacity: 1; }
+  #edges path.link.sel { stroke: var(--accent); stroke-width: 2.6; }
+  #edges path.xhit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
+  #edges circle.ep { fill: var(--accent); stroke: var(--bg); stroke-width: 2; pointer-events: all; cursor: grab; }
+  #edges circle.ep:hover { r: 9; }
+  #canvas.linking { cursor: crosshair; }
+  #edges marker path { fill: var(--gold); }
+  #edges text.xlabel { fill: var(--ink-2); font-size: 12px; font-family: inherit; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; pointer-events: none; }
+  #edges text.xlabel.sel { fill: var(--accent); }
+  /* geometric node shapes: the SHAPE is a backing layer so the text is never clipped (it stays
+     on top and may spill past the shape). Colours flow through --nc / --ncb, set by the c-*
+     classes or inline for a custom hex. Do NOT set `position` here - the base .node is
+     position:absolute (which also anchors ::before's inset:0); overriding it breaks placement. */
+  .node.shape-rect { border-radius: 0; }
+  .node.shape-circle { border-radius: 50%; text-align: center; padding: 14px 22px; overflow: visible; }
+  .node.shape-triangle, .node.shape-diamond { background: transparent !important; border-color: transparent !important; box-shadow: none !important; text-align: center; overflow: visible; }
+  .node.shape-triangle { padding: 26px 18px 8px; }
+  .node.shape-diamond  { padding: 18px 26px; }
+  .node.shape-triangle::before, .node.shape-diamond::before { content: ''; position: absolute; inset: 0; z-index: 0; background: var(--ncb, var(--surface)); border: 1.6px solid var(--nc, var(--border-strong)); }
+  .node.shape-triangle::before { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  .node.shape-diamond::before  { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+  .node.shape-triangle > *, .node.shape-diamond > * { position: relative; z-index: 1; }
 
   .node {
     position: absolute;
@@ -164,6 +185,17 @@
   .node .toggle:hover { border-color: var(--accent); color: var(--accent); }
 
   /* ── hint bar ────────────────────────────────────────── */
+  #edge-bar {
+    position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+    display: flex; gap: 6px; align-items: center; z-index: 30;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px;
+    box-shadow: var(--shadow); padding: 6px 10px;
+  }
+  #edge-bar.hidden { display: none; }
+  #edge-bar .eb-lab { font-size: 12px; color: var(--ink-2); }
+  #edge-bar input { font: inherit; font-size: 13px; width: 150px; color: var(--ink); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px; }
+  #edge-bar button { font: inherit; font-size: 14px; min-width: 30px; padding: 4px 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); cursor: pointer; }
+  #edge-bar button.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
   #hint {
     position: absolute;
     left: 50%; bottom: 14px;
@@ -194,16 +226,17 @@
   }
 
   /* ── node category colors (override default + root) ──── */
-  .node.c-blue   { background: #e6eefb; border-color: #5b87d6; color: var(--ink); }
-  .node.c-green  { background: #e7f3e1; border-color: #5d9b48; color: var(--ink); }
-  .node.c-red    { background: #fbe8e6; border-color: #cf6655; color: var(--ink); }
-  .node.c-amber  { background: #f9f0d8; border-color: #c39a36; color: var(--ink); }
-  .node.c-purple { background: #efe8fb; border-color: #8a6dc8; color: var(--ink); }
-  body.dark .node.c-blue   { background: #233246; border-color: #5b87d6; }
-  body.dark .node.c-green  { background: #243a26; border-color: #5d9b48; }
-  body.dark .node.c-red    { background: #432826; border-color: #cf6655; }
-  body.dark .node.c-amber  { background: #3b3320; border-color: #c39a36; }
-  body.dark .node.c-purple { background: #2f2842; border-color: #8a6dc8; }
+  .node.c-blue   { --nc: #5b87d6; --ncb: #e6eefb; background: var(--ncb); border-color: var(--nc); color: var(--ink); }
+  .node.c-green  { --nc: #5d9b48; --ncb: #e7f3e1; background: var(--ncb); border-color: var(--nc); color: var(--ink); }
+  .node.c-red    { --nc: #cf6655; --ncb: #fbe8e6; background: var(--ncb); border-color: var(--nc); color: var(--ink); }
+  .node.c-amber  { --nc: #c39a36; --ncb: #f9f0d8; background: var(--ncb); border-color: var(--nc); color: var(--ink); }
+  .node.c-purple { --nc: #8a6dc8; --ncb: #efe8fb; background: var(--ncb); border-color: var(--nc); color: var(--ink); }
+  .node.c-custom { background: var(--ncb); border-color: var(--nc); color: var(--ink); }   /* hex set inline */
+  body.dark .node.c-blue   { --ncb: #233246; }
+  body.dark .node.c-green  { --ncb: #243a26; }
+  body.dark .node.c-red    { --ncb: #432826; }
+  body.dark .node.c-amber  { --ncb: #3b3320; }
+  body.dark .node.c-purple { --ncb: #2f2842; }
 
   /* ── logic-gate node affordance (a diagram glyph, NOT a netlist) ─── */
   .node.gate { display: flex; align-items: center; gap: 8px; }
@@ -228,12 +261,22 @@
   .swatch.s-blue { background: #5b87d6; } .swatch.s-green { background: #5d9b48; }
   .swatch.s-red { background: #cf6655; } .swatch.s-amber { background: #c39a36; }
   .swatch.s-purple { background: #8a6dc8; }
+  .swatch.s-more { background: var(--surface); color: var(--ink-2); font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+  #color-pop { position: fixed; z-index: 60; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow); padding: 10px; }
+  #color-pop.hidden { display: none; }
+  #color-pop .cp-grid { display: grid; grid-template-columns: repeat(6, 22px); gap: 6px; }
+  #color-pop .cp-grid button { width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--border-strong); cursor: pointer; padding: 0; }
+  #color-pop .cp-grid button:hover { transform: scale(1.12); }
+  #color-pop .cp-custom { display: flex; align-items: center; gap: 6px; margin-top: 9px; font-size: 12px; color: var(--ink-2); }
   .swatch.s-default { background: var(--surface); position: relative; }
   .swatch.s-default::after { content: '⃠'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 14px; }
 
   /* ── per-node text size ──────────────────────────────── */
+  .node.fz-xs .node-text { font-size: 10px; }
   .node.fz-s .node-text { font-size: 12px; }
   .node.fz-l .node-text { font-size: 18px; }
+  .node.fz-xl .node-text { font-size: 25px; }
+  .node.fz-xxl .node-text { font-size: 34px; }
   .node.root.fz-l .node-text { font-size: 19px; }
 
   /* ── toolbar select (templates) + toggle ─────────────── */
@@ -302,11 +345,12 @@
   <button class="swatch s-amber" onclick="setNodeColor('amber')" title="Amber"></button>
   <button class="swatch s-purple" onclick="setNodeColor('purple')" title="Purple"></button>
   <button class="swatch s-default" onclick="setNodeColor('default')" title="No color"></button>
+  <button class="swatch s-more" id="color-more" onclick="toggleColorPop()" title="More colors">⋯</button>
   <div class="sep"></div>
   <button class="icon" onclick="setNodeFont(-1)" title="Smaller text">A−</button>
   <button class="icon" onclick="setNodeFont(1)" title="Larger text">A+</button>
-  <select id="kind-sel" onchange="setNodeKind(this.value); this.selectedIndex=0;" title="Logic-gate shape for the selected node" style="font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:6px 8px;cursor:pointer">
-    <option value="">shape…</option><option value="and">AND</option><option value="or">OR</option><option value="xor">XOR</option><option value="not">NOT</option><option value="mux">MUX</option><option value="none">- none</option>
+  <select id="kind-sel" onchange="setNodeKind(this.value); this.selectedIndex=0;" title="Shape for the selected node" style="font:inherit;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:6px 8px;cursor:pointer">
+    <option value="">shape…</option><option value="none">▭ Rounded</option><option value="rect">▬ Rectangle</option><option value="circle">● Circle</option><option value="diamond">◆ Diamond</option><option value="triangle">▲ Triangle</option><option value="and">AND</option><option value="or">OR</option><option value="xor">XOR</option><option value="not">NOT</option><option value="mux">MUX</option>
   </select>
   <div class="spacer"></div>
   <span id="status"></span>
@@ -322,12 +366,26 @@
   <button class="icon" id="theme-btn" onclick="toggleTheme()" title="Light / dark">☾</button>
 </div>
 
+<div id="color-pop" class="hidden">
+  <div class="cp-grid"></div>
+  <label class="cp-custom">Custom <input type="color" id="color-custom" value="#5b87d6"></label>
+</div>
 <div id="canvas">
   <div id="world">
     <svg id="edges"></svg>
   </div>
+  <div id="edge-bar" class="hidden">
+    <span class="eb-lab">Link</span>
+    <input id="edge-label" placeholder="label (optional)" title="Link label">
+    <button data-es="line" title="Plain line" onclick="setEdgeStyle('line')">—</button>
+    <button data-es="arrow" title="Arrow" onclick="setEdgeStyle('arrow')">→</button>
+    <button data-es="arrow2" title="Double arrow" onclick="setEdgeStyle('arrow2')">↔</button>
+    <button data-es="dashed" title="Dashed" onclick="setEdgeStyle('dashed')">┈</button>
+    <button class="icon" id="edge-del" title="Delete link (Del)" onclick="deleteEdge()">✕</button>
+    <button id="edge-done" title="Done (Esc)" onclick="deselectEdge()">Done</button>
+  </div>
   <div id="hint">
-    <b>Drag</b> background to pan · <b>scroll</b> to zoom · <kbd>Tab</kbd> child · <kbd>Enter</kbd> sibling · <kbd>F2</kbd> edit · <kbd>Del</kbd> delete · <kbd>Space</kbd> collapse
+    <b>Drag</b> pan · <b>scroll</b> zoom · <kbd>Tab</kbd> child · <kbd>Enter</kbd> sibling · <kbd>F2</kbd> edit · <kbd>Del</kbd> delete node/link · <kbd>Shift+Del</kbd> branch · <b>click a connection</b> to label/style it
   </div>
 </div>
 
@@ -341,6 +399,15 @@
   <div class="ai-body">
     <div class="ai-fence"><b>The AI proposes; you decide.</b> It expands a node into sub-ideas and distills pasted text into a map - but never changes your map without your approval. Talks only to your local Ollama at <code>localhost:11434</code>; nothing leaves your machine.</div>
     <label>Model <select id="ai-model"><option value="">(detecting…)</option></select></label>
+    <div style="margin-top:10px;border-top:1px solid var(--border,#0002);padding-top:10px">
+      <h3 style="font-size:13px;margin:0 0 6px">Generate a map</h3>
+      <textarea id="gen-input" placeholder="Describe the map…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="gen-btn">Generate</button><button id="gen-stop" class="hidden">Stop</button>
+      </div>
+      <div id="gen-preview" class="hidden" style="margin-top:10px;font-size:12px;white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--bg,#fafaf7);border:1px solid var(--border,#0002);border-radius:7px;padding:8px 10px;max-height:34vh;overflow:auto"></div>
+      <button id="gen-apply" class="hidden" style="margin-top:8px">Apply (replace)</button>
+    </div>
 
     <div class="ai-section">
       <h3>Expand node</h3>
@@ -494,6 +561,8 @@ const GRID = 20;          // snap-to-grid step (px, world coords)
 let data = { nodes: [], edges: [] };   // the mindmap body (source of truth; unknown fields preserved)
 let mapTitle = 'Untitled map';
 let selectedId = null;
+let selectedEdge = null;    // index into data.edges when a cross-link is selected
+let selectedParent = null;  // child node id when its parent→child connection is selected
 let fileHandle = null;
 let panX = 0, panY = 0, zoom = 1;
 let linkFrom = null;
@@ -536,6 +605,9 @@ function saveLocal() {
   storageSet(DATA_KEY, JSON.stringify({ title: mapTitle, body: data }));
 }
 function loadLocal() {
+  // Embedded in the Hub the FILE is the source of truth - do NOT restore the local
+  // shadow, or a stale map flashes in for every file the Hub opens. Wait for its `open`.
+  if (window.parent !== window) { newMind(true); return; }
   const raw = storageGet(DATA_KEY);
   if (!raw) { newMind(true); return; }
   try {
@@ -697,11 +769,31 @@ function setNodeColor(color) {
   if (!selectedId) { setStatus('Select a node first.', true); return; }
   const n = byId(selectedId); if (!n) return;
   pushUndo();
-  if (!color || color === 'default') delete n.color; else n.color = color;
+  if (!color || color === 'default') delete n.color; else n.color = color;   // named OR #hex
   saveLocal(); render();
 }
+// ── full colour palette (curated swatches + a custom picker), office-style popover ──
+const PALETTE = ['#5b87d6', '#3d8bd4', '#2fa39a', '#5d9b48', '#7cb342', '#c39a36',
+  '#e8823f', '#e8543f', '#cf6655', '#d94f7e', '#c14fb0', '#8a6dc8',
+  '#6c63c9', '#5a6b7b', '#8d99a6', '#c0392b', '#1f2937', '#0f766e'];
+function toggleColorPop() { const pop = document.getElementById('color-pop'); if (!pop) return; pop.classList.contains('hidden') ? showColorPop() : hideColorPop(); }
+function showColorPop() {
+  if (!selectedId) { setStatus('Select a node first.', true); return; }
+  const pop = document.getElementById('color-pop'), btn = document.getElementById('color-more'), r = btn.getBoundingClientRect();
+  pop.style.left = Math.max(6, Math.min(r.left, window.innerWidth - 190)) + 'px'; pop.style.top = (r.bottom + 6) + 'px';
+  pop.classList.remove('hidden');
+}
+function hideColorPop() { const pop = document.getElementById('color-pop'); if (pop) pop.classList.add('hidden'); }
+(function buildColorPop() {
+  const pop = document.getElementById('color-pop'); if (!pop) return;
+  const grid = pop.querySelector('.cp-grid');
+  grid.innerHTML = PALETTE.map(h => '<button style="background:' + h + '" data-c="' + h + '" title="' + h + '"></button>').join('');
+  grid.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setNodeColor(b.dataset.c); hideColorPop(); }));
+  pop.querySelector('#color-custom').addEventListener('change', e => { setNodeColor(e.target.value); });   // change (not input) → one undo step
+  document.addEventListener('mousedown', e => { if (pop.classList.contains('hidden')) return; if (!pop.contains(e.target) && e.target.id !== 'color-more') hideColorPop(); });
+})();
 // per-node text size: cycle s ↔ m ↔ l (m is the default, stored as no field)
-const SIZES = ['s', 'm', 'l'];
+const SIZES = ['xs', 's', 'm', 'l', 'xl', 'xxl'];   // A−/A+ range (bigger steps → bigger shapes)
 function setNodeFont(delta) {
   if (!selectedId) { setStatus('Select a node first.', true); return; }
   const n = byId(selectedId); if (!n) return;
@@ -714,7 +806,9 @@ function setNodeFont(delta) {
 }
 // per-node logic-gate shape (a diagram affordance - purely visual, no semantics)
 const GATE_KINDS = ['and', 'or', 'xor', 'not', 'mux'];
+const SHAPE_KINDS = ['rect', 'circle', 'triangle', 'diamond'];
 function isGate(k) { return GATE_KINDS.indexOf(k) !== -1; }
+function isShape(k) { return SHAPE_KINDS.indexOf(k) !== -1; }
 function gateGlyph(kind) {
   const g = {
     and: '<path d="M3 2 H13 A8 8 0 0 1 13 18 H3 Z"/>',
@@ -726,7 +820,16 @@ function gateGlyph(kind) {
   return '<svg class="gate-glyph" viewBox="0 0 26 20" aria-hidden="true">' + (g[kind] || '') + '</svg>';
 }
 function setNodeKind(kind) {
-  if (!selectedId) { setStatus('Select a node first.', true); return; }
+  if (!selectedId) {
+    // nothing selected → pick a shape to ADD a new standalone node with it
+    if (!kind || kind === 'none') { setStatus('Select a node first, or pick a shape to add a new one.', true); return; }
+    pushUndo();
+    const r = canvas.getBoundingClientRect();
+    const n = { id: uid(), text: 'New', x: Math.round((r.width / 2 - panX) / zoom), y: Math.round((r.height / 2 - panY) / zoom), parent: null, kind: kind };
+    data.nodes.push(n); selectedId = n.id; selectedEdge = null; selectedParent = null;
+    saveLocal(); render(); editNode(n.id);
+    return;
+  }
   const n = byId(selectedId); if (!n) return;
   pushUndo();
   if (!kind || kind === 'none') delete n.kind; else n.kind = kind;
@@ -837,7 +940,21 @@ function addSibling(id) {
   saveLocal(); render(); editNode(sib.id);
   return sib;
 }
+// Default (Visio-like): delete ONLY this node; its children re-parent up so the branch survives.
 function deleteNode(id) {
+  const node = byId(id); if (!node) return;
+  if (data.nodes.length <= 1) { setStatus('Can’t delete the last node.', true); return; }
+  pushUndo();
+  const up = node.parent && byId(node.parent) ? node.parent : null;   // grandparent, or root
+  childrenOf(id).forEach(c => { c.parent = up; });
+  data.nodes = data.nodes.filter(n => n.id !== id);
+  data.edges = data.edges.filter(e => e.from !== id && e.to !== id);  // cross-links touching it can't dangle
+  selectedId = up || (data.nodes[0] ? data.nodes[0].id : null);
+  selectedEdge = null; selectedParent = null;
+  saveLocal(); render(); showEdgeBar();
+}
+// Explicit power option (Shift+Del): delete the node AND its whole subtree.
+function deleteBranch(id) {
   const node = byId(id); if (!node) return;
   if (data.nodes.length <= 1) { setStatus('Can’t delete the last node.', true); return; }
   const remove = new Set([id]);
@@ -848,7 +965,8 @@ function deleteNode(id) {
   data.nodes = data.nodes.filter(n => !remove.has(n.id));
   data.edges = data.edges.filter(e => !remove.has(e.from) && !remove.has(e.to));
   selectedId = node.parent && byId(node.parent) ? node.parent : (data.nodes[0] ? data.nodes[0].id : null);
-  saveLocal(); render();
+  selectedEdge = null; selectedParent = null;
+  saveLocal(); render(); showEdgeBar();
 }
 function deleteSelected() { if (selectedId) deleteNode(selectedId); }
 function toggleCollapse(id) { const n = byId(id); if (!n || !childrenOf(id).length) return; pushUndo(); n.collapsed = !n.collapsed; saveLocal(); render(); }
@@ -863,11 +981,12 @@ function finishLink(targetId) {
   if (data.edges.some(e => (e.from === linkFrom && e.to === targetId) || (e.from === targetId && e.to === linkFrom))) { setStatus('Those nodes are already linked.'); cancelLink(); return; }
   const label = (prompt('Link label (optional):') || '').trim();
   const a = byId(linkFrom), b = byId(targetId);
-  const edge = { from: linkFrom, to: targetId, label };
+  const edge = { from: linkFrom, to: targetId, label, style: 'arrow' };
   if (a && b && isGate(a.kind) && isGate(b.kind)) { edge.fromPort = 'r'; edge.toPort = 'l'; } // signal flow out→in
   pushUndo();
   data.edges.push(edge);
-  cancelLink(); saveLocal(); render();
+  selectedEdge = data.edges.length - 1;   // select the new link so its label/style are editable
+  cancelLink(); saveLocal(); render(); showEdgeBar();
 }
 function cancelLink() { linkFrom = null; canvas.classList.remove('linking'); setStatus(''); }
 
@@ -897,7 +1016,17 @@ function fitView() {
 
 // ── rendering ────────────────────────────────────────────────────────
 let nodeSizes = {};  // transient: rendered px size per node id (for port anchoring)
-function edgePath(a, b) { const mx = (a.x + b.x) / 2; return 'M ' + a.x + ' ' + a.y + ' C ' + mx + ' ' + a.y + ', ' + mx + ' ' + b.y + ', ' + b.x + ' ' + b.y; }
+// exit point on `from`'s border in the direction of `to`, so the curve stops at the
+// node edge instead of running through the text
+function borderPoint(from, to) {
+  const sz = nodeSizes[from.id] || { w: 140, h: 40 };
+  const hw = sz.w / 2 + 3, hh = sz.h / 2 + 3;
+  const dx = to.x - from.x, dy = to.y - from.y;
+  if (dx === 0 && dy === 0) return { x: from.x, y: from.y };
+  const t = Math.min(dx !== 0 ? hw / Math.abs(dx) : Infinity, dy !== 0 ? hh / Math.abs(dy) : Infinity);
+  return { x: from.x + dx * t, y: from.y + dy * t };
+}
+function edgePath(a, b) { const p = borderPoint(a, b), q = borderPoint(b, a); const mx = (p.x + q.x) / 2; return 'M ' + p.x + ' ' + p.y + ' C ' + mx + ' ' + p.y + ', ' + mx + ' ' + q.y + ', ' + q.x + ' ' + q.y; }
 // anchor a point on a node's side (node x/y is its centre); used for signal-flow edges
 function anchorPoint(n, side) {
   const sz = nodeSizes[n.id] || { w: 140, h: 40 }, hw = sz.w / 2, hh = sz.h / 2;
@@ -909,31 +1038,137 @@ function anchorPoint(n, side) {
 }
 function portEdgePath(p1, p2) { const dx = Math.max(40, Math.abs(p2.x - p1.x) / 2); return 'M ' + p1.x + ' ' + p1.y + ' C ' + (p1.x + dx) + ' ' + p1.y + ', ' + (p2.x - dx) + ' ' + p2.y + ', ' + p2.x + ' ' + p2.y; }
 function drawEdges() {
-  let s = '';
+  let s = MM_MARKERS;
   data.nodes.forEach(n => {
     if (!n.parent) return; const p = byId(n.parent); if (!p) return;
     if (isHidden(n) || isHidden(p)) return;
-    s += '<path class="link" d="' + edgePath(p, n) + '"/>';
+    const d = edgePath(p, n);
+    const st = n.linkStyle || 'line';
+    const sel = (selectedParent === n.id) ? ' sel' : '';
+    const dash = st === 'dashed' ? ' stroke-dasharray="6 5"' : '';
+    const me = (st === 'arrow' || st === 'arrow2') ? ' marker-end="url(#mm-arw)"' : '';
+    const ms = st === 'arrow2' ? ' marker-start="url(#mm-arw)"' : '';
+    s += '<path class="xhit" data-parent="' + n.id + '" d="' + d + '"/>';
+    s += '<path class="link' + sel + '" d="' + d + '"' + dash + me + ms + '/>';
+    if (n.linkLabel) { const mx = (p.x + n.x) / 2, my = (p.y + n.y) / 2; s += '<text class="xlabel' + sel + '" x="' + mx + '" y="' + (my - 6) + '">' + escapeHtml(n.linkLabel) + '</text>'; }
+    if (selectedParent === n.id) { const hp = borderPoint(p, n); s += epHandle(hp, 'parent'); }   // drag to re-parent
   });
-  data.edges.forEach(e => {
+  data.edges.forEach((e, i) => {
     const a = byId(e.from), b = byId(e.to); if (!a || !b || isHidden(a) || isHidden(b)) return;
     let d, mx, my;
     if (e.fromPort || e.toPort) {                       // port-anchored (signal flow): out → in
       const p1 = anchorPoint(a, e.fromPort || 'c'), p2 = anchorPoint(b, e.toPort || 'c');
       d = portEdgePath(p1, p2); mx = (p1.x + p2.x) / 2; my = (p1.y + p2.y) / 2;
     } else { d = edgePath(a, b); mx = (a.x + b.x) / 2; my = (a.y + b.y) / 2; }
-    s += '<path class="xlink" d="' + d + '"/>';
-    if (e.label) s += '<text class="xlabel" x="' + mx + '" y="' + (my - 6) + '">' + escapeHtml(e.label) + '</text>';
+    const st = e.style || 'line';
+    const sel = (i === selectedEdge) ? ' sel' : '';
+    const dash = st === 'dashed' ? ' stroke-dasharray="6 5"' : '';
+    const me = (st === 'arrow' || st === 'arrow2') ? ' marker-end="url(#mm-arw)"' : '';
+    const ms = st === 'arrow2' ? ' marker-start="url(#mm-arw)"' : '';
+    s += '<path class="xhit" data-edge="' + i + '" d="' + d + '"/>';
+    s += '<path class="xlink' + sel + '" d="' + d + '"' + dash + me + ms + '/>';
+    if (e.label) s += '<text class="xlabel' + sel + '" x="' + mx + '" y="' + (my - 6) + '">' + escapeHtml(e.label) + '</text>';
+    if (i === selectedEdge) { const h1 = borderPoint(a, b), h2 = borderPoint(b, a); s += epHandle(h1, 'from') + epHandle(h2, 'to'); }   // drag to re-connect
   });
   svg.innerHTML = s;
+}
+function epHandle(pt, end) { return '<circle class="ep" data-end="' + end + '" cx="' + pt.x + '" cy="' + pt.y + '" r="7"/>'; }
+const MM_MARKERS = '<defs><marker id="mm-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/></marker></defs>';
+// ── clickable / labelled / styled connections (both cross-links AND parent→child) ──
+// A cross-link stores style/label on the edge object; a parent→child connection stores
+// them on the CHILD node (n.linkStyle / n.linkLabel), so the tree structure is untouched.
+function linkSelected() { return selectedEdge != null || selectedParent != null; }
+function linkStyleGet() {
+  if (selectedEdge != null) { const e = data.edges[selectedEdge]; return (e && e.style) || 'line'; }
+  if (selectedParent != null) { const n = byId(selectedParent); return (n && n.linkStyle) || 'line'; }
+  return 'line';
+}
+function linkLabelGet() {
+  if (selectedEdge != null) { const e = data.edges[selectedEdge]; return (e && e.label) || ''; }
+  if (selectedParent != null) { const n = byId(selectedParent); return (n && n.linkLabel) || ''; }
+  return '';
+}
+function showEdgeBar() {
+  const bar = document.getElementById('edge-bar'); if (!bar) return;
+  if (!linkSelected()) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  document.getElementById('edge-label').value = linkLabelGet();
+  const st = linkStyleGet();
+  bar.querySelectorAll('[data-es]').forEach(btn => btn.classList.toggle('on', st === btn.dataset.es));
+}
+function selectEdge(i) { selectedEdge = i; selectedParent = null; selectedId = null; world.querySelectorAll('.node.sel').forEach(el => el.classList.remove('sel')); render(); showEdgeBar(); }
+function selectParentLink(id) { selectedParent = id; selectedEdge = null; selectedId = null; world.querySelectorAll('.node.sel').forEach(el => el.classList.remove('sel')); render(); showEdgeBar(); }
+function deselectEdge() { selectedEdge = null; selectedParent = null; render(); showEdgeBar(); }
+function setEdgeStyle(st) {
+  if (selectedEdge != null) { const e = data.edges[selectedEdge]; if (!e) return; pushUndo(); e.style = st; }
+  else if (selectedParent != null) { const n = byId(selectedParent); if (!n) return; pushUndo(); n.linkStyle = st; }
+  else return;
+  saveLocal(); render(); showEdgeBar();
+}
+function setEdgeLabel(v) {
+  if (selectedEdge != null) { const e = data.edges[selectedEdge]; if (e) e.label = v; }
+  else if (selectedParent != null) { const n = byId(selectedParent); if (n) n.linkLabel = v; }
+  else return;
+  saveLocal(); render();
+}
+function deleteEdge() {   // delete the selected connection: remove a cross-link, or detach a child (parent→null)
+  if (selectedEdge != null) { pushUndo(); data.edges.splice(selectedEdge, 1); selectedEdge = null; }
+  else if (selectedParent != null) { pushUndo(); const n = byId(selectedParent); if (n) n.parent = null; selectedParent = null; }
+  else return;
+  saveLocal(); render(); showEdgeBar();
+}
+svg.addEventListener('click', e => {
+  const hit = e.target.closest && e.target.closest('.xhit'); if (!hit) return; e.stopPropagation();
+  if (hit.dataset.edge != null) selectEdge(+hit.dataset.edge);
+  else if (hit.dataset.parent) selectParentLink(hit.dataset.parent);
+});
+// ── drag a selected connection's endpoint onto another node to re-connect it (Visio-style) ──
+function worldPoint(clientX, clientY) { const r = canvas.getBoundingClientRect(); return { x: (clientX - r.left - panX) / zoom, y: (clientY - r.top - panY) / zoom }; }
+function isAncestorOf(ancId, id) { let cur = byId(id), guard = 0; while (cur && cur.parent && guard++ < 1000) { if (cur.parent === ancId) return true; cur = byId(cur.parent); } return false; }
+function drawTempLink(a, b) { let t = document.getElementById('mm-temp'); if (!t) { t = document.createElementNS('http://www.w3.org/2000/svg', 'path'); t.id = 'mm-temp'; t.setAttribute('class', 'xlink sel'); t.setAttribute('fill', 'none'); svg.appendChild(t); } t.setAttribute('d', 'M ' + a.x + ' ' + a.y + ' L ' + b.x + ' ' + b.y); }
+function clearTempLink() { const t = document.getElementById('mm-temp'); if (t) t.remove(); }
+svg.addEventListener('mousedown', e => {
+  const h = e.target.closest && e.target.closest('.ep'); if (!h) return;
+  e.stopPropagation(); e.preventDefault();
+  const end = h.dataset.end;
+  let fixed;
+  if (selectedEdge != null && (end === 'from' || end === 'to')) { const ed = data.edges[selectedEdge]; const other = byId(end === 'from' ? ed.to : ed.from); if (!other) return; fixed = { x: other.x, y: other.y }; }
+  else if (selectedParent != null && end === 'parent') { const c = byId(selectedParent); if (!c) return; fixed = { x: c.x, y: c.y }; }
+  else return;
+  canvas.classList.add('linking');
+  function mm(ev) { drawTempLink(fixed, worldPoint(ev.clientX, ev.clientY)); }
+  function mu(ev) {
+    document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu);
+    clearTempLink(); canvas.classList.remove('linking');
+    const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    const nodeEl = el && el.closest ? el.closest('.node') : null;
+    const targetId = nodeEl ? nodeEl.dataset.id : null;
+    if (targetId) reconnectEndpoint(end, targetId);
+  }
+  document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
+});
+function reconnectEndpoint(end, targetId) {
+  if (selectedEdge != null && (end === 'from' || end === 'to')) {
+    const ed = data.edges[selectedEdge]; if (!ed) return;
+    if (end === 'from') { if (targetId === ed.to) { setStatus('A link needs two different nodes.', true); return; } ed.from = targetId; }
+    else { if (targetId === ed.from) { setStatus('A link needs two different nodes.', true); return; } ed.to = targetId; }
+    pushUndo(); saveLocal(); render(); showEdgeBar();
+  } else if (selectedParent != null && end === 'parent') {
+    const c = byId(selectedParent); if (!c || targetId === c.id) return;
+    if (isAncestorOf(c.id, targetId)) { setStatus('Can’t re-parent onto one of its own descendants.', true); return; }
+    pushUndo(); c.parent = targetId; saveLocal(); render(); showEdgeBar();
+  }
 }
 function positionNode(el, n) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
 
 function makeNode(n) {
   const el = document.createElement('div');
-  const gate = isGate(n.kind);
-  el.className = 'node' + (n.parent ? '' : ' root') + (n.color ? ' c-' + n.color : '') + (n.size ? ' fz-' + n.size : '') + (gate ? ' gate' : '') + (n.id === selectedId ? ' sel' : '');
+  const gate = isGate(n.kind), shape = isShape(n.kind);
+  const hex = typeof n.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(n.color);
+  const colorCls = n.color ? (hex ? ' c-custom' : ' c-' + n.color) : '';
+  el.className = 'node' + (n.parent ? '' : ' root') + colorCls + (n.size ? ' fz-' + n.size : '') + (gate ? ' gate' : '') + (shape ? ' shape-' + n.kind : '') + (n.id === selectedId ? ' sel' : '');
   el.dataset.id = n.id;
+  if (hex) { el.style.setProperty('--nc', n.color); el.style.setProperty('--ncb', n.color + '26'); }   // 26 = ~15% alpha tint
   positionNode(el, n);
   if (gate) { const g = document.createElement('span'); g.innerHTML = gateGlyph(n.kind); el.appendChild(g.firstChild); }
 
@@ -1023,6 +1258,7 @@ function render() {
 
 function selectNode(id) {
   selectedId = id;
+  if (selectedEdge != null || selectedParent != null) { selectedEdge = null; selectedParent = null; const bar = document.getElementById('edge-bar'); if (bar) bar.classList.add('hidden'); drawEdges(); }
   world.querySelectorAll('.node').forEach(e => e.classList.toggle('sel', e.dataset.id === id));
 }
 function onNodeClick(id) {
@@ -1040,6 +1276,9 @@ function editNode(id) {
 
 // ── canvas pan / zoom ────────────────────────────────────────────────
 canvas.addEventListener('mousedown', e => {
+  // clicks on the edge bar, a node, or an edge hit-path are handled elsewhere -
+  // don't treat them as a background click (which would deselect + start a pan).
+  if (e.target.closest && (e.target.closest('#edge-bar') || e.target.closest('.node') || e.target.closest('.xhit'))) return;
   if (linkFrom) { cancelLink(); }
   selectNode(null);
   const sx = e.clientX, sy = e.clientY, px = panX, py = panY;
@@ -1092,16 +1331,18 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoomBy(0.9); return; }
   if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); fitView(); return; }
   if (editing) return;
-  if (e.key === 'Escape') { if (linkFrom) cancelLink(); return; }
+  if (e.key === 'Escape') { if (linkFrom) { cancelLink(); return; } if (linkSelected()) deselectEdge(); return; }
+  if (linkSelected() && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteEdge(); return; }
   if (!selectedId) return;
   if (e.key === 'Tab') { e.preventDefault(); addChild(selectedId); }
   else if (e.key === 'Enter') { e.preventDefault(); addSibling(selectedId); }
-  else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteNode(selectedId); }
+  else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.shiftKey ? deleteBranch(selectedId) : deleteNode(selectedId); }
   else if (e.key === 'F2') { e.preventDefault(); editNode(selectedId); }
   else if (e.key === ' ') { e.preventDefault(); toggleCollapse(selectedId); }
 });
 
 document.getElementById('map-title').addEventListener('input', e => { mapTitle = e.target.value || 'Untitled map'; saveLocal(); });
+document.getElementById('edge-label').addEventListener('input', e => setEdgeLabel(e.target.value));
 
 // ── theme ────────────────────────────────────────────────────────────
 function applyTheme() {
@@ -1320,18 +1561,19 @@ window.addEventListener('message', async (e) => {
 // ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
 const JsonPanel = (function () {
   'use strict';
-  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  let host, ta, info, hooks = null, promptText = '', showingPrompt = false, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
   function build() {
     const s = document.createElement('style');
     s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
     document.head.appendChild(s);
     host = document.createElement('div'); host.id = 'jp';
-    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="prompt" hidden>✦ Prompt</button><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
     document.body.appendChild(host);
     ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
     const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
     on('x', hide);
-    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('prompt', togglePrompt);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say(showingPrompt ? 'Prompt copied - paste it into your LLM.' : 'Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
     on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
     on('apply', apply);
     host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
@@ -1339,23 +1581,296 @@ const JsonPanel = (function () {
   }
   function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
   function hide() { host.classList.remove('on'); }
+  function togglePrompt() {
+    const pb = host.querySelector('[data-a="prompt"]');
+    if (!showingPrompt) { ta.value = promptText; showingPrompt = true; pb.textContent = '← JSON'; say('Copy this into any LLM (local, on-prem, or your own cloud), then paste the JSON it returns here and Apply.', 'ok'); }
+    else { ta.value = hooks.getText(); showingPrompt = false; pb.textContent = '✦ Prompt'; say(''); }
+    ta.scrollTop = 0;
+  }
   function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
   async function apply() {
     try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
     catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
   }
-  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); showingPrompt = false; const pb = host.querySelector('[data-a="prompt"]'); if (pb) pb.textContent = '✦ Prompt'; say(''); host.classList.add('on'); ta.focus(); }
   function init(h) {
-    hooks = h; if (!host) build();
+    hooks = h; promptText = (h && h.prompt) || ''; if (!host) build();
+    const pb = host.querySelector('[data-a="prompt"]'); if (pb) pb.hidden = !promptText;
     const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
     const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
     if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
     else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
     btn.addEventListener('click', open);
   }
-  return { init, open };
+  function setPrompt(p) { promptText = p || ''; const pb = host && host.querySelector('[data-a="prompt"]'); if (pb) pb.hidden = !promptText; }
+  return { init, open, setPrompt };
 })();
 JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpenedMind(LocalOffice.parse(t, { coerce: raw => (raw && Array.isArray(raw.nodes)) ? LocalOffice.createEnvelope('mindmap', { title: raw.title || '', app: APP, body: raw }) : null }).envelope, fileHandle) });
+
+// ── shared static renderer (inlined from src/render.js) — draws any embedded object's body. ──
+(function (factory) {
+  const mod = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
+  if (typeof window !== 'undefined') window.LocalRender = mod;
+})(function () {
+  const LABELS = { mindmap: 'Mind map', sheet: 'Sheet', runbook: 'Runbook', flashcards: 'Flashcards', plan: 'Plan', slides: 'Slides', doc: 'Document', image: 'Image' };
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function colToIdx(letters) { let n = 0; for (let i = 0; i < letters.length; i++) n = n * 26 + (letters.charCodeAt(i) - 64); return n - 1; }
+  function titleOf(env) { env = env || {}; return (env.meta && env.meta.title) || LABELS[env.type] || env.type || 'object'; }
+  function summary(env) {
+    env = env || {}; const b = env.body || {};
+    switch (env.type) {
+      case 'mindmap': { const n = (b.nodes || []).length; return n + ' node' + (n === 1 ? '' : 's'); }
+      case 'sheet': { const s = b.sheets && b.sheets[0]; return s ? (Object.keys(s.cells || {}).length + ' cells') : '0 cells'; }
+      case 'runbook': { const n = (b.steps || []).length; return n + ' step' + (n === 1 ? '' : 's'); }
+      case 'flashcards': { const n = (b.cards || []).length; return n + ' card' + (n === 1 ? '' : 's'); }
+      case 'plan': { const n = (b.tracks || []).length; return n + ' track' + (n === 1 ? '' : 's'); }
+      case 'slides': { const n = (b.slides || []).length; return n + ' slide' + (n === 1 ? '' : 's'); }
+      case 'doc': { const n = (b.blocks || []).length; return n + ' section' + (n === 1 ? '' : 's'); }
+      default: return '';
+    }
+  }
+  function card(env) {
+    const label = LABELS[(env && env.type)] || (env && env.type) || 'object'; const sum = summary(env);
+    return '<div class="lo-r-card" style="text-align:center;border:1px solid currentColor;border-radius:.5em;padding:.9em 1.1em;display:inline-block">' +
+      '<div style="font-size:.62em;opacity:.7;letter-spacing:.04em">\u25F2 ' + esc(label) + '</div><div style="margin-top:.2em">' + esc(titleOf(env)) + '</div>' +
+      (sum ? '<div style="font-size:.6em;opacity:.6;margin-top:.15em">' + esc(sum) + '</div>' : '') + '</div>';
+  }
+  function sheet(body, opts) {
+    const sh = (body.sheets && body.sheets[0]) || { cells: {} }; const cells = sh.cells || {}; const parsed = {}; let maxC = 0, maxR = 0, any = false;
+    Object.keys(cells).forEach(k => { const m = /^([A-Za-z]+)(\d+)$/.exec(k); if (!m) return; const c = colToIdx(m[1].toUpperCase()), r = parseInt(m[2], 10) - 1; if (c < 0 || r < 0) return; parsed[c + ',' + r] = cells[k]; any = true; if (c > maxC) maxC = c; if (r > maxR) maxR = r; });
+    if (!any) return card({ type: 'sheet', body: body });
+    const safeCol = s => (typeof s === 'string' && /^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]+$/.test(s)) ? s : '';
+    const capC = (opts && opts.maxCols) || 8, capR = (opts && opts.maxRows) || 16; const cC = Math.min(maxC, capC - 1), cR = Math.min(maxR, capR - 1);
+    let html = '<table class="lo-r-table" style="border-collapse:collapse;width:100%;font-size:.5em;line-height:1.35;font-variant-numeric:tabular-nums">';
+    for (let r = 0; r <= cR; r++) {
+      html += '<tr>';
+      for (let c = 0; c <= cC; c++) {
+        const cell = parsed[c + ',' + r]; const v = cell ? (cell.v != null ? cell.v : (cell.f ? ('=' + cell.f) : '')) : '';
+        const fmt = (cell && cell.format) || {}; const head = r === 0; const bg = safeCol(fmt.bg), fg = safeCol(fmt.fg);
+        const style = 'border:1px solid rgba(128,128,128,.5);padding:.16em .42em;text-align:' + (fmt.align || (typeof v === 'number' ? 'right' : 'left')) + ';' +
+          (bg ? ('background:' + bg + ';') : (head ? 'background:rgba(128,128,128,.14);' : '')) + (fg ? ('color:' + fg + ';') : '') +
+          ((fmt.bold || head) ? 'font-weight:700;' : '') + (fmt.italic ? 'font-style:italic;' : '');
+        html += '<' + (head ? 'th' : 'td') + ' style="' + style + '">' + esc(v) + '</' + (head ? 'th' : 'td') + '>';
+      }
+      html += '</tr>';
+    }
+    return html + '</table>';
+  }
+  function mindmapSVG(body) {
+    const placed = (body.nodes || []).filter(n => n && Number.isFinite(n.x) && Number.isFinite(n.y));
+    if (placed.length < 1) return '';
+    const byId = {}; (body.nodes || []).forEach(n => { byId[n.id] = n; });
+    const CMAP = { blue: '#5b87d6', green: '#5d9b48', red: '#cf6655', amber: '#c39a36', purple: '#8a6dc8' };
+    const col = n => CMAP[n.color] || ((typeof n.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(n.color)) ? n.color : 'currentColor');
+    const sizeOf = n => { const lab = String(n.text == null ? '' : n.text).slice(0, 22); const tw = Math.max(46, Math.min(190, 24 + lab.length * 8.4)), th = 30; if (n.kind === 'circle') { const d = Math.max(tw, th) + 8; return { w: d, h: d }; } if (n.kind === 'triangle') { return { w: tw + 12, h: th + 16 }; } if (n.kind === 'diamond') { return { w: tw + 20, h: th + 22 }; } return { w: tw, h: th }; };
+    const bp = (from, to) => { const s = sizeOf(from), hw = s.w / 2 + 3, hh = s.h / 2 + 3, dx = to.x - from.x, dy = to.y - from.y; if (dx === 0 && dy === 0) return { x: from.x, y: from.y }; const t = Math.min(dx !== 0 ? hw / Math.abs(dx) : Infinity, dy !== 0 ? hh / Math.abs(dy) : Infinity); return { x: from.x + dx * t, y: from.y + dy * t }; };
+    const curve = (a, b) => { const p = bp(a, b), q = bp(b, a); const mx = (p.x + q.x) / 2; return 'M ' + p.x + ' ' + p.y + ' C ' + mx + ' ' + p.y + ', ' + mx + ' ' + q.y + ', ' + q.x + ' ' + q.y; };
+    const styleAttrs = st => (st === 'dashed' ? ' stroke-dasharray="6 5"' : '') + ((st === 'arrow' || st === 'arrow2') ? ' marker-end="url(#lr-arw)"' : '') + (st === 'arrow2' ? ' marker-start="url(#lr-arw)"' : '');
+    const xs = placed.map(n => n.x), ys = placed.map(n => n.y), pad = 70;
+    const minX = Math.min.apply(null, xs) - pad, maxX = Math.max.apply(null, xs) + pad, minY = Math.min.apply(null, ys) - pad, maxY = Math.max.apply(null, ys) + pad;
+    const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
+    const marker = '<defs><marker id="lr-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>';
+    const lbl = (a, b, t) => { const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; return '<text x="' + mx + '" y="' + (my - 4) + '" text-anchor="middle" font-size="12" fill="currentColor" fill-opacity="0.75">' + esc(t) + '</text>'; };
+    let edges = '';
+    (body.nodes || []).forEach(n => { const p = n.parent && byId[n.parent]; if (!(p && Number.isFinite(n.x) && Number.isFinite(p.x))) return; const st = n.linkStyle || 'line'; edges += '<path d="' + curve(p, n) + '" fill="none" stroke="currentColor" stroke-opacity="0.35" stroke-width="2"' + styleAttrs(st) + '/>'; if (n.linkLabel) edges += lbl(p, n, n.linkLabel); });
+    (body.edges || []).forEach(e => { const a = byId[e.from], b = byId[e.to]; if (!a || !b || !Number.isFinite(a.x) || !Number.isFinite(b.x)) return; const st = e.style || 'line'; edges += '<path d="' + curve(a, b) + '" fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="2"' + styleAttrs(st) + '/>'; if (e.label) edges += lbl(a, b, e.label); });
+    const shapes = placed.map(n => {
+      const label = String(n.text == null ? '' : n.text).slice(0, 22);
+      const tw = Math.max(46, Math.min(190, 24 + label.length * 8.4)), th = 30, c = col(n);
+      const fillA = ' fill="' + c + '" fill-opacity="0.18" stroke="' + c + '" stroke-opacity="0.78" stroke-width="1.5"';
+      const txt = '<text x="' + n.x + '" y="' + (n.y + 4.5) + '" text-anchor="middle" font-size="14" fill="currentColor">' + esc(label) + '</text>';
+      if (n.kind === 'circle') { const r = Math.max(tw, th) / 2 + 4; return '<g><circle cx="' + n.x + '" cy="' + n.y + '" r="' + r + '"' + fillA + '/>' + txt + '</g>'; }
+      if (n.kind === 'triangle') { const hw = tw / 2 + 6, hh = th / 2 + 8, pts = n.x + ',' + (n.y - hh) + ' ' + (n.x + hw) + ',' + (n.y + hh) + ' ' + (n.x - hw) + ',' + (n.y + hh); return '<g><polygon points="' + pts + '"' + fillA + '/><text x="' + n.x + '" y="' + (n.y + hh - 8) + '" text-anchor="middle" font-size="13" fill="currentColor">' + esc(label) + '</text></g>'; }
+      if (n.kind === 'diamond') { const hw = tw / 2 + 10, hh = th / 2 + 11, pts = n.x + ',' + (n.y - hh) + ' ' + (n.x + hw) + ',' + n.y + ' ' + n.x + ',' + (n.y + hh) + ' ' + (n.x - hw) + ',' + n.y; return '<g><polygon points="' + pts + '"' + fillA + '/>' + txt + '</g>'; }
+      const rx = (n.kind === 'rect') ? 0 : 8;   // rect = sharp corners, default = rounded
+      return '<g><rect x="' + (n.x - tw / 2) + '" y="' + (n.y - th / 2) + '" width="' + tw + '" height="' + th + '" rx="' + rx + '"' + fillA + '/>' + txt + '</g>';
+    }).join('');
+    return '<svg class="lo-r-svg" viewBox="' + minX + ' ' + minY + ' ' + w + ' ' + h + '" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%">' + marker + edges + shapes + '</svg>';
+  }
+  function mindmap(body) { const svg = mindmapSVG(body); return svg || card({ type: 'mindmap', body: body }); }
+  function runbook(body, opts) { const steps = (body.steps || []).slice(0, (opts && opts.maxRows) || 16); if (!steps.length) return card({ type: 'runbook', body: body }); let html = '<ul class="lo-r-list" style="list-style:none;margin:0;padding:0;font-size:.58em;line-height:1.5;text-align:left">'; steps.forEach(s => { const mark = s.kind === 'note' ? '\u2022' : ((s.done || (s.result && s.result.pass)) ? '\u2611' : '\u2610'); html += '<li style="display:flex;gap:.5em"><span>' + mark + '</span><span>' + esc(s.text || '') + '</span></li>'; }); return html + '</ul>'; }
+  function doc(body, opts) { const blocks = (body.blocks || []).slice(0, (opts && opts.maxRows) || 12); if (!blocks.length) return card({ type: 'doc', body: body }); let html = '<div class="lo-r-doc" style="font-size:.55em;line-height:1.4;text-align:left">'; blocks.forEach(b => { if (b.heading) html += '<div style="font-weight:700;margin:.4em 0 .12em">' + esc(b.heading) + '</div>'; if (b.text) html += '<div style="opacity:.85">' + esc(String(b.text).replace(/[#>*`_]/g, '').slice(0, 220)) + '</div>'; }); return html + '</div>'; }
+  function plan(body, opts) { const tracks = (body.tracks || []).slice(0, (opts && opts.maxRows) || 6); if (!tracks.length) return card({ type: 'plan', body: body }); let html = '<div class="lo-r-plan" style="font-size:.55em;line-height:1.4;text-align:left">'; tracks.forEach(t => { html += '<div style="font-weight:700;margin-top:.3em">' + esc(t.title || '') + '</div>'; (t.sections || []).slice(0, 3).forEach(sec => { const items = (sec.items || []).slice(0, 4).map(i => esc(i.text || '')).filter(Boolean).join(', '); html += '<div style="opacity:.8">' + esc(sec.name || '') + (items ? ': ' + items : '') + '</div>'; }); }); return html + '</div>'; }
+  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> \u2014 ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
+  function slides(body, opts) { const ss = body.slides || []; if (!ss.length) return card({ type: 'slides', body: body }); let html = '<div class="lo-r-slides" style="font-size:.55em;line-height:1.5;text-align:left">'; ss.slice(0, (opts && opts.maxRows) || 10).forEach((s, i) => { const tb = (s.blocks || []).find(b => b.role === 'title' || b.type === 'text'); const t = (tb && tb.content) || ('Slide ' + (i + 1)); html += '<div>' + (i + 1) + '. ' + esc(t) + '</div>'; }); return html + '</div>'; }
+  function render(env, opts) { env = env || {}; const body = env.body || {}; switch (env.type) { case 'sheet': return sheet(body, opts); case 'mindmap': return mindmap(body, opts); case 'runbook': return runbook(body, opts); case 'doc': return doc(body, opts); case 'plan': return plan(body, opts); case 'flashcards': return flashcards(body, opts); case 'slides': return slides(body, opts); default: return card(env); } }
+  return { render, card, summary, titleOf, mindmapSVG, LABELS };
+});
+
+// \u2500\u2500 shared Embeds drawer: attach other tools' localoffice objects to this file.
+// Objects live in body.embeds[] (round-trip on save/load). Each is drawn as a STATIC preview by
+// the shared LocalRender module, and edited live in a modal that runs the real tool. \u2500\u2500
+const EmbedHost = (function () {
+  'use strict';
+  const TOOLS = {
+    mindmap:    { src: '../localMindMap/index.html',      label: 'Mind map' },
+    sheet:      { src: '../localSheets/localsheets.html', label: 'Sheet' },
+    runbook:    { src: '../localCheck/index.html',        label: 'Runbook' },
+    flashcards: { src: '../localCards/localCards.html',   label: 'Flashcards' },
+    plan:       { src: '../localPlan/index.html',         label: 'Plan' },
+    slides:     { src: '../localDeck/localDeck.html',     label: 'Slides' },
+    doc:        { src: '../localDoc/index.html',          label: 'Document' },
+  };
+  let host, listEl, hooks = null, curEdit = null;   // curEdit = { id, frame } while the editor modal is open
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function uid() { return 'e' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3); }
+  function read() { try { return (hooks && hooks.read()) || []; } catch (e) { return []; } }
+  function write(a) { try { hooks && hooks.write(a); } catch (e) {} }
+  function preview(env) { try { return (window.LocalRender ? LocalRender.render(env) : '') || ''; } catch (e) { return ''; } }
+  function blankBody(type) {
+    switch (type) {
+      case 'mindmap': return { nodes: [{ id: 'r', text: 'Idea', parent: null }], edges: [] };
+      case 'sheet': return { sheets: [{ name: 'Sheet1', cells: {}, cols: 6, rows: 12 }] };
+      case 'runbook': return { steps: [{ id: 's1', kind: 'check', text: 'First step' }] };
+      case 'flashcards': return { deck: { name: 'Deck' }, scheduler: 'fsrs-lite', cards: [{ id: 'c1', front: 'Front', back: 'Back' }] };
+      case 'plan': return { planTitle: 'Plan', tracks: [{ id: 't1', icon: '\u2022', title: 'Track', open: true, sections: [{ name: 'Now', horizon: 'now', items: [] }] }] };
+      case 'slides': return { theme: {}, slides: [{ id: 's1', layout: 'title', blocks: [] }] };
+      case 'doc': return { docMode: 'prose', style: {}, blocks: [{ id: 'b1', heading: '', text: '', required: [] }] };
+      default: return {};
+    }
+  }
+  function blankEnvelope(type) { return { format: 'localoffice/v1', type: type, meta: { title: TOOLS[type] ? TOOLS[type].label : type }, body: blankBody(type) }; }
+  function build() {
+    const s = document.createElement('style');
+    s.textContent = '#eh{position:fixed;inset:0;z-index:4200;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#eh.on{display:flex}#eh .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:900px;max-width:100%;max-height:90vh;display:flex;flex-direction:column}#eh .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#eh .h b{flex:1;font-size:14px}#eh .bd{padding:12px 14px;overflow:auto}#eh button,#eh select{font:inherit;font-size:13px;padding:7px 11px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#eh .eh-card{border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:10px;margin-bottom:12px;overflow:hidden;background:var(--bg,#fafaf7)}#eh .eh-hd{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#eh .eh-tag{font-size:12px;font-weight:600;color:var(--ink-2,#5a5a55);border:1px solid var(--border,rgba(0,0,0,.12));border-radius:999px;padding:2px 9px;white-space:nowrap}#eh .eh-t{flex:1;font-size:13px}#eh .eh-edit,#eh .eh-rm{padding:3px 9px}#eh .eh-prev{font-size:26px;color:var(--ink,#1a1a17);padding:12px 14px;display:flex;align-items:center;justify-content:center;min-height:80px;max-height:46vh;overflow:auto;cursor:pointer}#eh .eh-prev .lo-r-svg{width:100%;height:260px}#eh .eh-empty{font-size:13px;color:var(--ink-2,#5a5a55);padding:8px 2px}#eh-editor{position:fixed;inset:0;z-index:4300;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:22px}#eh-editor.on{display:flex}#eh-editor .ee-m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;width:1040px;max-width:100%;height:88vh;display:flex;flex-direction:column;box-shadow:0 18px 60px rgba(0,0,0,.45)}#eh-editor .ee-h{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#eh-editor .ee-h b{font-size:14px}#eh-editor .ee-note{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#eh-editor .ee-body{flex:1;overflow:hidden}#eh-editor .ee-frame{width:100%;height:100%;border:0;display:block;background:#fff}';
+    document.head.appendChild(s);
+    host = document.createElement('div'); host.id = 'eh';
+    host.innerHTML = '<div class="m"><div class="h"><b>\u25F2 Embedded objects</b>' +
+      '<select data-a="add"><option value="">+ Add \u25BE</option><option value="mindmap">Mind map</option><option value="sheet">Sheet</option><option value="runbook">Runbook</option><option value="flashcards">Flashcards</option><option value="plan">Plan</option><option value="slides">Slides</option><option value="doc">Document</option></select>' +
+      '<button data-a="x">Close</button></div><div class="bd" data-list></div></div>';
+    document.body.appendChild(host);
+    listEl = host.querySelector('[data-list]');
+    host.querySelector('[data-a="x"]').addEventListener('click', hide);
+    host.querySelector('[data-a="add"]').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; if (v) add(v); });
+    host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
+    document.addEventListener('keydown', e => { if (host && host.classList.contains('on') && !curEdit && e.key === 'Escape') hide(); });
+  }
+  function add(type) { const list = read().slice(); list.push({ id: uid(), envelope: blankEnvelope(type) }); write(list); render(); }
+  function removeEmbed(id) { if (curEdit && curEdit.id === id) closeEditor(); write(read().filter(e => e.id !== id)); render(); }
+  function render() {
+    const list = read(); listEl.innerHTML = '';
+    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool \u2014 it is drawn here and saved inside this file.</p>'; return; }
+    list.forEach(item => {
+      const env = item.envelope || {}; const type = env.type; const tool = TOOLS[type];
+      const title = (env.meta && env.meta.title) || (tool ? tool.label : type) || 'object';
+      const cardEl = document.createElement('div'); cardEl.className = 'eh-card';
+      cardEl.innerHTML = '<div class="eh-hd"><span class="eh-tag">\u25F2 ' + esc(tool ? tool.label : (type || 'object')) + '</span><b class="eh-t">' + esc(title) + '</b>' + (tool ? '<button class="eh-edit">Edit \u25F2</button>' : '') + '<button class="eh-rm" title="Remove">\u2715</button></div><div class="eh-prev"' + (tool ? ' title="Double-click to edit"' : '') + '>' + preview(env) + '</div>';
+      cardEl.querySelector('.eh-rm').addEventListener('click', () => removeEmbed(item.id));
+      const ed = cardEl.querySelector('.eh-edit'); if (ed) ed.addEventListener('click', () => openEditor(item.id));
+      const pv = cardEl.querySelector('.eh-prev'); if (tool && pv) pv.addEventListener('dblclick', () => openEditor(item.id));
+      listEl.appendChild(cardEl);
+    });
+  }
+  function openEditor(id) {
+    const item = read().find(e => e.id === id); if (!item || !TOOLS[item.envelope.type]) return;
+    let m = document.getElementById('eh-editor');
+    if (!m) {
+      m = document.createElement('div'); m.id = 'eh-editor';
+      m.innerHTML = '<div class="ee-m"><div class="ee-h"><b></b><span class="ee-note">Edits stream back in. Nothing leaves your machine.</span><button data-a="done">Done</button></div><div class="ee-body"><iframe class="ee-frame" title="Embedded editor"></iframe></div></div>';
+      document.body.appendChild(m);
+      m.querySelector('[data-a="done"]').addEventListener('click', closeEditor);
+      m.addEventListener('mousedown', e => { if (e.target === m) closeEditor(); });
+    }
+    m.querySelector('.ee-h b').textContent = '\u25F2 ' + (TOOLS[item.envelope.type].label || item.envelope.type);
+    const fr = m.querySelector('.ee-frame'); fr.src = TOOLS[item.envelope.type].src;
+    curEdit = { id: id, frame: fr }; m.classList.add('on');
+  }
+  function closeEditor() { const m = document.getElementById('eh-editor'); if (m) { m.classList.remove('on'); const fr = m.querySelector('.ee-frame'); if (fr) fr.src = 'about:blank'; } curEdit = null; render(); }
+  window.addEventListener('message', e => {
+    const m = e.data; if (!m || m.proto !== 'localoffice') return;
+    if (!curEdit || e.source !== curEdit.frame.contentWindow) return;
+    const list = read(); const item = list.find(x => x.id === curEdit.id); if (!item) return;
+    if (m.type === 'ready') { try { e.source.postMessage({ proto: 'localoffice', type: 'open', embedded: true, text: JSON.stringify(item.envelope) }, '*'); } catch (_) {} }
+    else if (m.type === 'embedState') { try { const env = JSON.parse(m.text); if (env && env.type) { item.envelope = env; write(list); render(); } } catch (_) {} }
+  });
+  function open() { if (!host) build(); render(); host.classList.add('on'); }
+  function hide() { if (host) host.classList.remove('on'); }
+  function init(h) {
+    hooks = h; if (!host) build();
+    const btn = document.createElement('button'); btn.textContent = '\u25F2 Embeds'; btn.title = "Embed another tool's object as content saved inside this file";
+    const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
+    if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
+    else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
+    btn.addEventListener('click', open);
+  }
+  return { init, open, hide, list: read };
+})();
+EmbedHost.init({ read: () => (data.embeds || []), write: (a) => { data.embeds = a; } });
+
+// ── embed-as-live-object: when a host tool embeds this file, feed edits back (state carryover) ──
+(function () {
+  if (window.parent === window) return;
+  var embedded = false, tmr = null;
+  function serialize() { return LocalOffice.stringify(exportData()); }
+  function push(target) { try { (target || window.parent).postMessage({ proto: 'localoffice', type: 'embedState', text: serialize() }, '*'); } catch (_) {} }
+  function schedule() { if (!embedded) return; clearTimeout(tmr); tmr = setTimeout(function () { push(); }, 400); }
+  window.addEventListener('message', function (e) {
+    var m = e.data; if (!m || m.proto !== 'localoffice') return;
+    if (m.type === 'open' && m.embedded) { embedded = true; document.body.classList.add('lo-embedded'); }
+    else if (m.type === 'embedFlush') { push(e.source || window.parent); }
+  });
+  ['input', 'change', 'keyup', 'pointerup'].forEach(function (ev) { document.addEventListener(ev, schedule, true); });
+  var st = document.createElement('style'); st.textContent = '.lo-embedded{padding:0!important}'; document.head.appendChild(st);
+})();
+const LOCALMINDMAP_PROMPT = `You output ONE localoffice/v1 "mindmap" file as JSON. Reply with ONLY the JSON (no prose, no code fences).
+
+Shape:
+{
+  "format": "localoffice/v1",
+  "type": "mindmap",
+  "meta": { "title": "<map title>" },
+  "body": {
+    "nodes": [
+      { "id": "<unique-id>", "text": "<label>", "parent": null }
+    ],
+    "edges": [ { "from": "<id>", "to": "<id>", "label": "<optional>" } ]
+  }
+}
+
+Rules:
+- Exactly ONE root node with "parent": null. Every other node has "parent" set to another node's id (a tree).
+- Each node needs a unique "id" and short "text". Do NOT set x/y - the tool lays it out (use Tidy after).
+- "edges" is optional: extra cross-links between two node ids, with an optional "label".
+- Optional node "color": one of "blue","green","red","amber","purple". Keep labels short.
+- Produce a root plus 2 to 4 branches, each with a few children.
+
+Now produce a mind map for:
+<describe the mind map you want>`;
+JsonPanel.setPrompt(LOCALMINDMAP_PROMPT);
+
+// ── in-app "Generate a map" from a description via local Ollama (uses the ✦ Prompt) ──
+let ogPending = null, ogAbort = null;
+async function ogRun() {
+  const st = document.getElementById("ai-status"), inp = document.getElementById("gen-input");
+  const desc = (inp.value || "").trim(); if (!desc) { st.classList.add("err"); st.textContent = "Describe the map first."; return; }
+  const model = document.getElementById("ai-model").value; if (!model) { st.classList.add("err"); st.textContent = "Pick a model first."; return; }
+  const gb = document.getElementById("gen-btn"), sb = document.getElementById("gen-stop"), pv = document.getElementById("gen-preview"), ap = document.getElementById("gen-apply");
+  gb.classList.add("hidden"); sb.classList.remove("hidden"); pv.classList.add("hidden"); ap.classList.add("hidden"); st.classList.remove("err");
+  ogAbort = new AbortController(); const t0 = Date.now(); const tk = setInterval(function () { st.textContent = "Drafting… " + ((Date.now() - t0) / 1000).toFixed(1) + "s"; }, 150);
+  try {
+    const full = LOCALMINDMAP_PROMPT.replace("<describe the mind map you want>", function () { return desc; });
+    const res = await fetch(AI.host + "/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: model, prompt: full, stream: false, format: "json", options: { temperature: 0 } }), signal: ogAbort.signal });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const raw = JSON.parse((await res.json()).response);
+    let env = (raw && raw.type === "mindmap" && raw.body) ? raw : (raw && raw.body && Array.isArray(raw.body.nodes)) ? raw : (raw && Array.isArray(raw.nodes)) ? { meta: { title: raw.title || "Untitled" }, body: raw } : null;
+    if (!env || !env.body || !Array.isArray(env.body.nodes) || !env.body.nodes.length) throw new Error("The model did not return a map I can read.");
+    env.format = "localoffice/v1"; env.type = "mindmap"; if (!env.meta) env.meta = { title: "Untitled" };
+    ogPending = env;
+    pv.textContent = "Title: " + (env.meta.title || "(untitled)") + "\n" + env.body.nodes.length + " node(s).";
+    pv.classList.remove("hidden"); ap.classList.remove("hidden");
+    st.textContent = "Drafted in " + ((Date.now() - t0) / 1000).toFixed(1) + "s. Review, then Apply.";
+  } catch (e) { st.classList.add("err"); st.textContent = (e.name === "AbortError") ? "Stopped." : ("Error: " + e.message); }
+  finally { clearInterval(tk); gb.classList.remove("hidden"); sb.classList.add("hidden"); ogAbort = null; }
+}
+function ogApply() {
+  if (!ogPending) return; const st = document.getElementById("ai-status");
+  try { applyOpenedMind(ogPending, fileHandle); if (typeof tidyAll === "function") tidyAll(); ogPending = null; document.getElementById("gen-preview").classList.add("hidden"); document.getElementById("gen-apply").classList.add("hidden"); st.classList.remove("err"); st.textContent = "Applied - nothing left your machine."; }
+  catch (e) { st.classList.add("err"); st.textContent = "Could not apply: " + (e && e.message || e); }
+}
+document.getElementById("gen-btn").addEventListener("click", ogRun);
+document.getElementById("gen-apply").addEventListener("click", ogApply);
+document.getElementById("gen-stop").addEventListener("click", function () { if (ogAbort) ogAbort.abort(); });
 
 if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localMindMap' }, '*');
 

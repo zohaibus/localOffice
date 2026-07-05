@@ -137,7 +137,7 @@ Network tab, use the app, and watch nothing happen.
 ```
 localCheck/
 ├── index.html       # The entire application (inlines the core + verify kernel)
-├── verify-check.js  # Headless (Playwright) verification (36 checks)
+├── verify-check.js  # Headless (Playwright) verification (42 checks)
 └── README.md        # This file
 ```
 

@@ -52,6 +52,7 @@
   .step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
           padding: 12px 14px; margin-bottom: 10px; display: flex; gap: 12px; align-items: flex-start; }
   .step .n { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 6px; min-width: 22px; }
+  .step .val, .step .sp-min, .step .sp-max { font-variant-numeric: tabular-nums; }   /* measured readings align */
   .step .body { flex: 1; min-width: 0; }
   .step .text { width: 100%; border: 1px solid transparent; background: transparent; font-size: 15px; padding: 5px 6px; border-radius: var(--radius-sm); }
   .step .text:hover { border-color: var(--border); } .step .text:focus { outline: none; border-color: var(--accent); background: var(--bg); }
@@ -111,6 +112,7 @@
   <div class="spacer"></div>
   <span id="status"></span>
   <div class="sep"></div>
+  <button class="icon" onclick="AI.show()" title="Local AI — optional, needs Ollama. Proposes; the kernel decides sign-off.">✦ AI</button>
   <button class="icon" id="theme-btn" onclick="toggleTheme()" title="Light / dark">☾</button>
 </div>
 
@@ -119,6 +121,38 @@
 <div class="signbar" id="signbar">
   <span class="summary" id="summary"></span>
   <span class="actions"><button class="primary" id="sign-btn" onclick="signOff()">Sign &amp; seal</button></span>
+</div>
+
+<style>
+#ai-panel{position:fixed;inset:0;z-index:4100;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}
+#ai-panel.on{display:flex}
+#ai-panel .ac{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:620px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}
+#ai-panel .ah{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}
+#ai-panel .ah b{flex:1;font-size:14px}
+#ai-panel .ab{padding:12px 14px;overflow:auto}
+#ai-panel button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}
+#ai-panel select,#ai-panel textarea{font:inherit;font-size:13px;padding:6px 8px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--bg,#fafaf7);color:var(--ink,#1a1a17)}
+#ai-panel textarea{width:100%;box-sizing:border-box;min-height:70px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace}
+#ai-status.err{color:#cd2b31}
+</style>
+<div id="ai-panel">
+  <div class="ac">
+    <div class="ah"><b>✦ Local AI — optional</b><button onclick="AI.hide()">Close</button></div>
+    <div class="ab">
+      <p style="margin:0 0 10px;font-size:12px;color:var(--ink-2,#5a5a55)">Talks only to a local Ollama at localhost:11434 — nothing leaves your machine. The AI proposes; the deterministic kernel still decides sign-off.</p>
+      <label>Model <select id="ai-model"><option value="">(detecting…)</option></select></label>
+      <div id="ai-status" style="margin-top:8px;font-size:12px;color:var(--ink-2,#5a5a55)"></div>
+      <div style="margin-top:10px;border-top:1px solid var(--border,#0002);padding-top:10px">
+        <h3 style="font-size:13px;margin:0 0 6px">Generate a runbook</h3>
+        <textarea id="gen-input" placeholder="Describe the runbook…"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="gen-btn" onclick="ogRun()">Generate</button><button id="gen-stop" class="hidden" onclick="if(ogAbort)ogAbort.abort()">Stop</button>
+        </div>
+        <div id="gen-preview" class="hidden" style="margin-top:10px;font-size:12px;white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--bg,#fafaf7);border:1px solid var(--border,#0002);border-radius:7px;padding:8px 10px;max-height:34vh;overflow:auto"></div>
+        <button id="gen-apply" class="hidden" style="margin-top:8px" onclick="ogApply()">Apply (replace)</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -500,18 +534,19 @@ render();
 // ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
 const JsonPanel = (function () {
   'use strict';
-  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  let host, ta, info, hooks = null, promptText = '', showingPrompt = false, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
   function build() {
     const s = document.createElement('style');
     s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
     document.head.appendChild(s);
     host = document.createElement('div'); host.id = 'jp';
-    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="prompt" hidden>✦ Prompt</button><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
     document.body.appendChild(host);
     ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
     const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
     on('x', hide);
-    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('prompt', togglePrompt);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say(showingPrompt ? 'Prompt copied - paste it into your LLM.' : 'Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
     on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
     on('apply', apply);
     host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
@@ -519,23 +554,315 @@ const JsonPanel = (function () {
   }
   function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
   function hide() { host.classList.remove('on'); }
+  function togglePrompt() {
+    const pb = host.querySelector('[data-a="prompt"]');
+    if (!showingPrompt) { ta.value = promptText; showingPrompt = true; pb.textContent = '← JSON'; say('Copy this into any LLM (local, on-prem, or your own cloud), then paste the JSON it returns here and Apply.', 'ok'); }
+    else { ta.value = hooks.getText(); showingPrompt = false; pb.textContent = '✦ Prompt'; say(''); }
+    ta.scrollTop = 0;
+  }
   function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
   async function apply() {
     try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
     catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
   }
-  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); showingPrompt = false; const pb = host.querySelector('[data-a="prompt"]'); if (pb) pb.textContent = '✦ Prompt'; say(''); host.classList.add('on'); ta.focus(); }
   function init(h) {
-    hooks = h; if (!host) build();
+    hooks = h; promptText = (h && h.prompt) || ''; if (!host) build();
+    const pb = host.querySelector('[data-a="prompt"]'); if (pb) pb.hidden = !promptText;
     const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
     const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
     if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
     else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
     btn.addEventListener('click', open);
   }
-  return { init, open };
+  function setPrompt(p) { promptText = p || ''; const pb = host && host.querySelector('[data-a="prompt"]'); if (pb) pb.hidden = !promptText; }
+  return { init, open, setPrompt };
 })();
 JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpened(LocalOffice.parse(t).envelope) });
+
+// ── shared static renderer (inlined from src/render.js) — draws any embedded object's body. ──
+(function (factory) {
+  const mod = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
+  if (typeof window !== 'undefined') window.LocalRender = mod;
+})(function () {
+  const LABELS = { mindmap: 'Mind map', sheet: 'Sheet', runbook: 'Runbook', flashcards: 'Flashcards', plan: 'Plan', slides: 'Slides', doc: 'Document', image: 'Image' };
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function colToIdx(letters) { let n = 0; for (let i = 0; i < letters.length; i++) n = n * 26 + (letters.charCodeAt(i) - 64); return n - 1; }
+  function titleOf(env) { env = env || {}; return (env.meta && env.meta.title) || LABELS[env.type] || env.type || 'object'; }
+  function summary(env) {
+    env = env || {}; const b = env.body || {};
+    switch (env.type) {
+      case 'mindmap': { const n = (b.nodes || []).length; return n + ' node' + (n === 1 ? '' : 's'); }
+      case 'sheet': { const s = b.sheets && b.sheets[0]; return s ? (Object.keys(s.cells || {}).length + ' cells') : '0 cells'; }
+      case 'runbook': { const n = (b.steps || []).length; return n + ' step' + (n === 1 ? '' : 's'); }
+      case 'flashcards': { const n = (b.cards || []).length; return n + ' card' + (n === 1 ? '' : 's'); }
+      case 'plan': { const n = (b.tracks || []).length; return n + ' track' + (n === 1 ? '' : 's'); }
+      case 'slides': { const n = (b.slides || []).length; return n + ' slide' + (n === 1 ? '' : 's'); }
+      case 'doc': { const n = (b.blocks || []).length; return n + ' section' + (n === 1 ? '' : 's'); }
+      default: return '';
+    }
+  }
+  function card(env) {
+    const label = LABELS[(env && env.type)] || (env && env.type) || 'object'; const sum = summary(env);
+    return '<div class="lo-r-card" style="text-align:center;border:1px solid currentColor;border-radius:.5em;padding:.9em 1.1em;display:inline-block">' +
+      '<div style="font-size:.62em;opacity:.7;letter-spacing:.04em">\u25F2 ' + esc(label) + '</div><div style="margin-top:.2em">' + esc(titleOf(env)) + '</div>' +
+      (sum ? '<div style="font-size:.6em;opacity:.6;margin-top:.15em">' + esc(sum) + '</div>' : '') + '</div>';
+  }
+  function sheet(body, opts) {
+    const sh = (body.sheets && body.sheets[0]) || { cells: {} }; const cells = sh.cells || {}; const parsed = {}; let maxC = 0, maxR = 0, any = false;
+    Object.keys(cells).forEach(k => { const m = /^([A-Za-z]+)(\d+)$/.exec(k); if (!m) return; const c = colToIdx(m[1].toUpperCase()), r = parseInt(m[2], 10) - 1; if (c < 0 || r < 0) return; parsed[c + ',' + r] = cells[k]; any = true; if (c > maxC) maxC = c; if (r > maxR) maxR = r; });
+    if (!any) return card({ type: 'sheet', body: body });
+    const safeCol = s => (typeof s === 'string' && /^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]+$/.test(s)) ? s : '';
+    const capC = (opts && opts.maxCols) || 8, capR = (opts && opts.maxRows) || 16; const cC = Math.min(maxC, capC - 1), cR = Math.min(maxR, capR - 1);
+    let html = '<table class="lo-r-table" style="border-collapse:collapse;width:100%;font-size:.5em;line-height:1.35;font-variant-numeric:tabular-nums">';
+    for (let r = 0; r <= cR; r++) {
+      html += '<tr>';
+      for (let c = 0; c <= cC; c++) {
+        const cell = parsed[c + ',' + r]; const v = cell ? (cell.v != null ? cell.v : (cell.f ? ('=' + cell.f) : '')) : '';
+        const fmt = (cell && cell.format) || {}; const head = r === 0; const bg = safeCol(fmt.bg), fg = safeCol(fmt.fg);
+        const style = 'border:1px solid rgba(128,128,128,.5);padding:.16em .42em;text-align:' + (fmt.align || (typeof v === 'number' ? 'right' : 'left')) + ';' +
+          (bg ? ('background:' + bg + ';') : (head ? 'background:rgba(128,128,128,.14);' : '')) + (fg ? ('color:' + fg + ';') : '') +
+          ((fmt.bold || head) ? 'font-weight:700;' : '') + (fmt.italic ? 'font-style:italic;' : '');
+        html += '<' + (head ? 'th' : 'td') + ' style="' + style + '">' + esc(v) + '</' + (head ? 'th' : 'td') + '>';
+      }
+      html += '</tr>';
+    }
+    return html + '</table>';
+  }
+  function mindmapSVG(body) {
+    const placed = (body.nodes || []).filter(n => n && Number.isFinite(n.x) && Number.isFinite(n.y));
+    if (placed.length < 1) return '';
+    const byId = {}; (body.nodes || []).forEach(n => { byId[n.id] = n; });
+    const CMAP = { blue: '#5b87d6', green: '#5d9b48', red: '#cf6655', amber: '#c39a36', purple: '#8a6dc8' };
+    const col = n => CMAP[n.color] || ((typeof n.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(n.color)) ? n.color : 'currentColor');
+    const sizeOf = n => { const lab = String(n.text == null ? '' : n.text).slice(0, 22); const tw = Math.max(46, Math.min(190, 24 + lab.length * 8.4)), th = 30; if (n.kind === 'circle') { const d = Math.max(tw, th) + 8; return { w: d, h: d }; } if (n.kind === 'triangle') { return { w: tw + 12, h: th + 16 }; } if (n.kind === 'diamond') { return { w: tw + 20, h: th + 22 }; } return { w: tw, h: th }; };
+    const bp = (from, to) => { const s = sizeOf(from), hw = s.w / 2 + 3, hh = s.h / 2 + 3, dx = to.x - from.x, dy = to.y - from.y; if (dx === 0 && dy === 0) return { x: from.x, y: from.y }; const t = Math.min(dx !== 0 ? hw / Math.abs(dx) : Infinity, dy !== 0 ? hh / Math.abs(dy) : Infinity); return { x: from.x + dx * t, y: from.y + dy * t }; };
+    const curve = (a, b) => { const p = bp(a, b), q = bp(b, a); const mx = (p.x + q.x) / 2; return 'M ' + p.x + ' ' + p.y + ' C ' + mx + ' ' + p.y + ', ' + mx + ' ' + q.y + ', ' + q.x + ' ' + q.y; };
+    const styleAttrs = st => (st === 'dashed' ? ' stroke-dasharray="6 5"' : '') + ((st === 'arrow' || st === 'arrow2') ? ' marker-end="url(#lr-arw)"' : '') + (st === 'arrow2' ? ' marker-start="url(#lr-arw)"' : '');
+    const xs = placed.map(n => n.x), ys = placed.map(n => n.y), pad = 70;
+    const minX = Math.min.apply(null, xs) - pad, maxX = Math.max.apply(null, xs) + pad, minY = Math.min.apply(null, ys) - pad, maxY = Math.max.apply(null, ys) + pad;
+    const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
+    const marker = '<defs><marker id="lr-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>';
+    const lbl = (a, b, t) => { const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; return '<text x="' + mx + '" y="' + (my - 4) + '" text-anchor="middle" font-size="12" fill="currentColor" fill-opacity="0.75">' + esc(t) + '</text>'; };
+    let edges = '';
+    (body.nodes || []).forEach(n => { const p = n.parent && byId[n.parent]; if (!(p && Number.isFinite(n.x) && Number.isFinite(p.x))) return; const st = n.linkStyle || 'line'; edges += '<path d="' + curve(p, n) + '" fill="none" stroke="currentColor" stroke-opacity="0.35" stroke-width="2"' + styleAttrs(st) + '/>'; if (n.linkLabel) edges += lbl(p, n, n.linkLabel); });
+    (body.edges || []).forEach(e => { const a = byId[e.from], b = byId[e.to]; if (!a || !b || !Number.isFinite(a.x) || !Number.isFinite(b.x)) return; const st = e.style || 'line'; edges += '<path d="' + curve(a, b) + '" fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="2"' + styleAttrs(st) + '/>'; if (e.label) edges += lbl(a, b, e.label); });
+    const shapes = placed.map(n => {
+      const label = String(n.text == null ? '' : n.text).slice(0, 22);
+      const tw = Math.max(46, Math.min(190, 24 + label.length * 8.4)), th = 30, c = col(n);
+      const fillA = ' fill="' + c + '" fill-opacity="0.18" stroke="' + c + '" stroke-opacity="0.78" stroke-width="1.5"';
+      const txt = '<text x="' + n.x + '" y="' + (n.y + 4.5) + '" text-anchor="middle" font-size="14" fill="currentColor">' + esc(label) + '</text>';
+      if (n.kind === 'circle') { const r = Math.max(tw, th) / 2 + 4; return '<g><circle cx="' + n.x + '" cy="' + n.y + '" r="' + r + '"' + fillA + '/>' + txt + '</g>'; }
+      if (n.kind === 'triangle') { const hw = tw / 2 + 6, hh = th / 2 + 8, pts = n.x + ',' + (n.y - hh) + ' ' + (n.x + hw) + ',' + (n.y + hh) + ' ' + (n.x - hw) + ',' + (n.y + hh); return '<g><polygon points="' + pts + '"' + fillA + '/><text x="' + n.x + '" y="' + (n.y + hh - 8) + '" text-anchor="middle" font-size="13" fill="currentColor">' + esc(label) + '</text></g>'; }
+      if (n.kind === 'diamond') { const hw = tw / 2 + 10, hh = th / 2 + 11, pts = n.x + ',' + (n.y - hh) + ' ' + (n.x + hw) + ',' + n.y + ' ' + n.x + ',' + (n.y + hh) + ' ' + (n.x - hw) + ',' + n.y; return '<g><polygon points="' + pts + '"' + fillA + '/>' + txt + '</g>'; }
+      const rx = (n.kind === 'rect') ? 0 : 8;   // rect = sharp corners, default = rounded
+      return '<g><rect x="' + (n.x - tw / 2) + '" y="' + (n.y - th / 2) + '" width="' + tw + '" height="' + th + '" rx="' + rx + '"' + fillA + '/>' + txt + '</g>';
+    }).join('');
+    return '<svg class="lo-r-svg" viewBox="' + minX + ' ' + minY + ' ' + w + ' ' + h + '" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%">' + marker + edges + shapes + '</svg>';
+  }
+  function mindmap(body) { const svg = mindmapSVG(body); return svg || card({ type: 'mindmap', body: body }); }
+  function runbook(body, opts) { const steps = (body.steps || []).slice(0, (opts && opts.maxRows) || 16); if (!steps.length) return card({ type: 'runbook', body: body }); let html = '<ul class="lo-r-list" style="list-style:none;margin:0;padding:0;font-size:.58em;line-height:1.5;text-align:left">'; steps.forEach(s => { const mark = s.kind === 'note' ? '\u2022' : ((s.done || (s.result && s.result.pass)) ? '\u2611' : '\u2610'); html += '<li style="display:flex;gap:.5em"><span>' + mark + '</span><span>' + esc(s.text || '') + '</span></li>'; }); return html + '</ul>'; }
+  function doc(body, opts) { const blocks = (body.blocks || []).slice(0, (opts && opts.maxRows) || 12); if (!blocks.length) return card({ type: 'doc', body: body }); let html = '<div class="lo-r-doc" style="font-size:.55em;line-height:1.4;text-align:left">'; blocks.forEach(b => { if (b.heading) html += '<div style="font-weight:700;margin:.4em 0 .12em">' + esc(b.heading) + '</div>'; if (b.text) html += '<div style="opacity:.85">' + esc(String(b.text).replace(/[#>*`_]/g, '').slice(0, 220)) + '</div>'; }); return html + '</div>'; }
+  function plan(body, opts) { const tracks = (body.tracks || []).slice(0, (opts && opts.maxRows) || 6); if (!tracks.length) return card({ type: 'plan', body: body }); let html = '<div class="lo-r-plan" style="font-size:.55em;line-height:1.4;text-align:left">'; tracks.forEach(t => { html += '<div style="font-weight:700;margin-top:.3em">' + esc(t.title || '') + '</div>'; (t.sections || []).slice(0, 3).forEach(sec => { const items = (sec.items || []).slice(0, 4).map(i => esc(i.text || '')).filter(Boolean).join(', '); html += '<div style="opacity:.8">' + esc(sec.name || '') + (items ? ': ' + items : '') + '</div>'; }); }); return html + '</div>'; }
+  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> \u2014 ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
+  function slides(body, opts) { const ss = body.slides || []; if (!ss.length) return card({ type: 'slides', body: body }); let html = '<div class="lo-r-slides" style="font-size:.55em;line-height:1.5;text-align:left">'; ss.slice(0, (opts && opts.maxRows) || 10).forEach((s, i) => { const tb = (s.blocks || []).find(b => b.role === 'title' || b.type === 'text'); const t = (tb && tb.content) || ('Slide ' + (i + 1)); html += '<div>' + (i + 1) + '. ' + esc(t) + '</div>'; }); return html + '</div>'; }
+  function render(env, opts) { env = env || {}; const body = env.body || {}; switch (env.type) { case 'sheet': return sheet(body, opts); case 'mindmap': return mindmap(body, opts); case 'runbook': return runbook(body, opts); case 'doc': return doc(body, opts); case 'plan': return plan(body, opts); case 'flashcards': return flashcards(body, opts); case 'slides': return slides(body, opts); default: return card(env); } }
+  return { render, card, summary, titleOf, mindmapSVG, LABELS };
+});
+
+// \u2500\u2500 shared Embeds drawer: attach other tools' localoffice objects to this file.
+// Objects live in body.embeds[] (round-trip on save/load). Each is drawn as a STATIC preview by
+// the shared LocalRender module, and edited live in a modal that runs the real tool. \u2500\u2500
+const EmbedHost = (function () {
+  'use strict';
+  const TOOLS = {
+    mindmap:    { src: '../localMindMap/index.html',      label: 'Mind map' },
+    sheet:      { src: '../localSheets/localsheets.html', label: 'Sheet' },
+    runbook:    { src: '../localCheck/index.html',        label: 'Runbook' },
+    flashcards: { src: '../localCards/localCards.html',   label: 'Flashcards' },
+    plan:       { src: '../localPlan/index.html',         label: 'Plan' },
+    slides:     { src: '../localDeck/localDeck.html',     label: 'Slides' },
+    doc:        { src: '../localDoc/index.html',          label: 'Document' },
+  };
+  let host, listEl, hooks = null, curEdit = null;   // curEdit = { id, frame } while the editor modal is open
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function uid() { return 'e' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3); }
+  function read() { try { return (hooks && hooks.read()) || []; } catch (e) { return []; } }
+  function write(a) { try { hooks && hooks.write(a); } catch (e) {} }
+  function preview(env) { try { return (window.LocalRender ? LocalRender.render(env) : '') || ''; } catch (e) { return ''; } }
+  function blankBody(type) {
+    switch (type) {
+      case 'mindmap': return { nodes: [{ id: 'r', text: 'Idea', parent: null }], edges: [] };
+      case 'sheet': return { sheets: [{ name: 'Sheet1', cells: {}, cols: 6, rows: 12 }] };
+      case 'runbook': return { steps: [{ id: 's1', kind: 'check', text: 'First step' }] };
+      case 'flashcards': return { deck: { name: 'Deck' }, scheduler: 'fsrs-lite', cards: [{ id: 'c1', front: 'Front', back: 'Back' }] };
+      case 'plan': return { planTitle: 'Plan', tracks: [{ id: 't1', icon: '\u2022', title: 'Track', open: true, sections: [{ name: 'Now', horizon: 'now', items: [] }] }] };
+      case 'slides': return { theme: {}, slides: [{ id: 's1', layout: 'title', blocks: [] }] };
+      case 'doc': return { docMode: 'prose', style: {}, blocks: [{ id: 'b1', heading: '', text: '', required: [] }] };
+      default: return {};
+    }
+  }
+  function blankEnvelope(type) { return { format: 'localoffice/v1', type: type, meta: { title: TOOLS[type] ? TOOLS[type].label : type }, body: blankBody(type) }; }
+  function build() {
+    const s = document.createElement('style');
+    s.textContent = '#eh{position:fixed;inset:0;z-index:4200;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#eh.on{display:flex}#eh .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:900px;max-width:100%;max-height:90vh;display:flex;flex-direction:column}#eh .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#eh .h b{flex:1;font-size:14px}#eh .bd{padding:12px 14px;overflow:auto}#eh button,#eh select{font:inherit;font-size:13px;padding:7px 11px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#eh .eh-card{border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:10px;margin-bottom:12px;overflow:hidden;background:var(--bg,#fafaf7)}#eh .eh-hd{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#eh .eh-tag{font-size:12px;font-weight:600;color:var(--ink-2,#5a5a55);border:1px solid var(--border,rgba(0,0,0,.12));border-radius:999px;padding:2px 9px;white-space:nowrap}#eh .eh-t{flex:1;font-size:13px}#eh .eh-edit,#eh .eh-rm{padding:3px 9px}#eh .eh-prev{font-size:26px;color:var(--ink,#1a1a17);padding:12px 14px;display:flex;align-items:center;justify-content:center;min-height:80px;max-height:46vh;overflow:auto;cursor:pointer}#eh .eh-prev .lo-r-svg{width:100%;height:260px}#eh .eh-empty{font-size:13px;color:var(--ink-2,#5a5a55);padding:8px 2px}#eh-editor{position:fixed;inset:0;z-index:4300;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:22px}#eh-editor.on{display:flex}#eh-editor .ee-m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;width:1040px;max-width:100%;height:88vh;display:flex;flex-direction:column;box-shadow:0 18px 60px rgba(0,0,0,.45)}#eh-editor .ee-h{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#eh-editor .ee-h b{font-size:14px}#eh-editor .ee-note{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#eh-editor .ee-body{flex:1;overflow:hidden}#eh-editor .ee-frame{width:100%;height:100%;border:0;display:block;background:#fff}';
+    document.head.appendChild(s);
+    host = document.createElement('div'); host.id = 'eh';
+    host.innerHTML = '<div class="m"><div class="h"><b>\u25F2 Embedded objects</b>' +
+      '<select data-a="add"><option value="">+ Add \u25BE</option><option value="mindmap">Mind map</option><option value="sheet">Sheet</option><option value="runbook">Runbook</option><option value="flashcards">Flashcards</option><option value="plan">Plan</option><option value="slides">Slides</option><option value="doc">Document</option></select>' +
+      '<button data-a="x">Close</button></div><div class="bd" data-list></div></div>';
+    document.body.appendChild(host);
+    listEl = host.querySelector('[data-list]');
+    host.querySelector('[data-a="x"]').addEventListener('click', hide);
+    host.querySelector('[data-a="add"]').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; if (v) add(v); });
+    host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
+    document.addEventListener('keydown', e => { if (host && host.classList.contains('on') && !curEdit && e.key === 'Escape') hide(); });
+  }
+  function add(type) { const list = read().slice(); list.push({ id: uid(), envelope: blankEnvelope(type) }); write(list); render(); }
+  function removeEmbed(id) { if (curEdit && curEdit.id === id) closeEditor(); write(read().filter(e => e.id !== id)); render(); }
+  function render() {
+    const list = read(); listEl.innerHTML = '';
+    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool \u2014 it is drawn here and saved inside this file.</p>'; return; }
+    list.forEach(item => {
+      const env = item.envelope || {}; const type = env.type; const tool = TOOLS[type];
+      const title = (env.meta && env.meta.title) || (tool ? tool.label : type) || 'object';
+      const cardEl = document.createElement('div'); cardEl.className = 'eh-card';
+      cardEl.innerHTML = '<div class="eh-hd"><span class="eh-tag">\u25F2 ' + esc(tool ? tool.label : (type || 'object')) + '</span><b class="eh-t">' + esc(title) + '</b>' + (tool ? '<button class="eh-edit">Edit \u25F2</button>' : '') + '<button class="eh-rm" title="Remove">\u2715</button></div><div class="eh-prev"' + (tool ? ' title="Double-click to edit"' : '') + '>' + preview(env) + '</div>';
+      cardEl.querySelector('.eh-rm').addEventListener('click', () => removeEmbed(item.id));
+      const ed = cardEl.querySelector('.eh-edit'); if (ed) ed.addEventListener('click', () => openEditor(item.id));
+      const pv = cardEl.querySelector('.eh-prev'); if (tool && pv) pv.addEventListener('dblclick', () => openEditor(item.id));
+      listEl.appendChild(cardEl);
+    });
+  }
+  function openEditor(id) {
+    const item = read().find(e => e.id === id); if (!item || !TOOLS[item.envelope.type]) return;
+    let m = document.getElementById('eh-editor');
+    if (!m) {
+      m = document.createElement('div'); m.id = 'eh-editor';
+      m.innerHTML = '<div class="ee-m"><div class="ee-h"><b></b><span class="ee-note">Edits stream back in. Nothing leaves your machine.</span><button data-a="done">Done</button></div><div class="ee-body"><iframe class="ee-frame" title="Embedded editor"></iframe></div></div>';
+      document.body.appendChild(m);
+      m.querySelector('[data-a="done"]').addEventListener('click', closeEditor);
+      m.addEventListener('mousedown', e => { if (e.target === m) closeEditor(); });
+    }
+    m.querySelector('.ee-h b').textContent = '\u25F2 ' + (TOOLS[item.envelope.type].label || item.envelope.type);
+    const fr = m.querySelector('.ee-frame'); fr.src = TOOLS[item.envelope.type].src;
+    curEdit = { id: id, frame: fr }; m.classList.add('on');
+  }
+  function closeEditor() { const m = document.getElementById('eh-editor'); if (m) { m.classList.remove('on'); const fr = m.querySelector('.ee-frame'); if (fr) fr.src = 'about:blank'; } curEdit = null; render(); }
+  window.addEventListener('message', e => {
+    const m = e.data; if (!m || m.proto !== 'localoffice') return;
+    if (!curEdit || e.source !== curEdit.frame.contentWindow) return;
+    const list = read(); const item = list.find(x => x.id === curEdit.id); if (!item) return;
+    if (m.type === 'ready') { try { e.source.postMessage({ proto: 'localoffice', type: 'open', embedded: true, text: JSON.stringify(item.envelope) }, '*'); } catch (_) {} }
+    else if (m.type === 'embedState') { try { const env = JSON.parse(m.text); if (env && env.type) { item.envelope = env; write(list); render(); } } catch (_) {} }
+  });
+  function open() { if (!host) build(); render(); host.classList.add('on'); }
+  function hide() { if (host) host.classList.remove('on'); }
+  function init(h) {
+    hooks = h; if (!host) build();
+    const btn = document.createElement('button'); btn.textContent = '\u25F2 Embeds'; btn.title = "Embed another tool's object as content saved inside this file";
+    const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
+    if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
+    else (document.querySelector('header, .toolbar, .topbar') || document.body).appendChild(btn);
+    btn.addEventListener('click', open);
+  }
+  return { init, open, hide, list: read };
+})();
+EmbedHost.init({ read: () => (data.embeds || []), write: (a) => { data.embeds = a; } });
+
+// ── embed-as-live-object: when a host tool embeds this file, feed edits back (state carryover) ──
+(function () {
+  if (window.parent === window) return;
+  var embedded = false, tmr = null;
+  function serialize() { return LocalOffice.stringify(exportData()); }
+  function push(target) { try { (target || window.parent).postMessage({ proto: 'localoffice', type: 'embedState', text: serialize() }, '*'); } catch (_) {} }
+  function schedule() { if (!embedded) return; clearTimeout(tmr); tmr = setTimeout(function () { push(); }, 400); }
+  window.addEventListener('message', function (e) {
+    var m = e.data; if (!m || m.proto !== 'localoffice') return;
+    if (m.type === 'open' && m.embedded) { embedded = true; document.body.classList.add('lo-embedded'); }
+    else if (m.type === 'embedFlush') { push(e.source || window.parent); }
+  });
+  ['input', 'change', 'keyup', 'pointerup'].forEach(function (ev) { document.addEventListener(ev, schedule, true); });
+  var st = document.createElement('style'); st.textContent = '.lo-embedded{padding:0!important}'; document.head.appendChild(st);
+})();
+const LOCALCHECK_PROMPT = `You output ONE localoffice/v1 "runbook" file as JSON. Reply with ONLY the JSON (no prose, no code fences).
+
+Shape:
+{
+  "format": "localoffice/v1",
+  "type": "runbook",
+  "meta": { "title": "<runbook title>" },
+  "body": {
+    "steps": [
+      { "id": "<unique-id>", "kind": "check", "text": "<what to confirm>" },
+      { "id": "<unique-id>", "kind": "measure", "text": "<what to measure>",
+        "comparator": "tolerance", "params": { "min": 3.2, "max": 3.4 } },
+      { "id": "<unique-id>", "kind": "note", "text": "<free note>" }
+    ]
+  }
+}
+
+Rules:
+- Three step kinds: "check" (tick to confirm), "measure" (a value graded by the kernel), "note" (never gates).
+- A "measure" step MUST have "comparator" + "params":
+  - "tolerance": numeric, params { "min": <n>, "max": <n> }  OR  { "expected": <n>, "abs": <n> }
+  - "exact": params { "expected": "<string>" }
+  - "coverage": params { "required": ["<keyword>"] }
+- Sign-off is blocked until every check is done and every measure passes - the math decides, not the AI.
+- Each step needs a unique "id". Produce a realistic ordered runbook.
+
+Now produce a runbook for:
+<describe the runbook you want>`;
+JsonPanel.setPrompt(LOCALCHECK_PROMPT);
+
+// ── optional local-AI panel: talks ONLY to a local Ollama (localhost) — no cloud, no telemetry ──
+const AI = {
+  host: 'http://localhost:11434', model: '', models: [],
+  async detect() {
+    const sel = document.getElementById('ai-model'), st = document.getElementById('ai-status');
+    try {
+      const r = await fetch(this.host + '/api/tags'); if (!r.ok) throw 0;
+      const j = await r.json(); this.models = (j.models || []).map(m => m.name);
+      if (!this.models.length) { sel.innerHTML = '<option value="">(no models)</option>'; st.textContent = 'Ollama is running but has no models. Try: ollama pull llama3.2'; return; }
+      sel.innerHTML = this.models.map(m => '<option>' + m + '</option>').join(''); sel.value = this.models[0]; this.model = this.models[0];
+      st.classList.remove('err'); st.textContent = 'Ready — ' + this.models.length + ' model' + (this.models.length > 1 ? 's' : '') + ' found.';
+    } catch (e) { sel.innerHTML = '<option value="">(offline)</option>'; st.classList.remove('err'); st.textContent = 'No local Ollama at ' + this.host + '. Start it (ollama serve), or use ✦ Prompt in the JSON panel to draft in any LLM.'; }
+  },
+  show() { document.getElementById('ai-panel').classList.add('on'); this.detect(); },
+  hide() { document.getElementById('ai-panel').classList.remove('on'); },
+};
+window.AI = AI; // handle for tests/console; doesn't change the UX
+
+// ── in-app "Generate a runbook" from a description via local Ollama (uses the ✦ Prompt) ──
+let ogPending = null, ogAbort = null;
+async function ogRun() {
+  const st = document.getElementById('ai-status'), inp = document.getElementById('gen-input');
+  const desc = (inp.value || '').trim(); if (!desc) { st.classList.add('err'); st.textContent = 'Describe the runbook first.'; return; }
+  const model = document.getElementById('ai-model').value; if (!model) { st.classList.add('err'); st.textContent = 'Pick a model first (start Ollama, then reopen).'; return; }
+  const gb = document.getElementById('gen-btn'), sb = document.getElementById('gen-stop'), pv = document.getElementById('gen-preview'), ap = document.getElementById('gen-apply');
+  gb.classList.add('hidden'); sb.classList.remove('hidden'); pv.classList.add('hidden'); ap.classList.add('hidden'); st.classList.remove('err');
+  ogAbort = new AbortController(); const t0 = Date.now(); const tk = setInterval(function () { st.textContent = 'Drafting… ' + ((Date.now() - t0) / 1000).toFixed(1) + 's'; }, 150);
+  try {
+    const full = LOCALCHECK_PROMPT.replace('<describe the runbook you want>', function () { return desc; });
+    const res = await fetch(AI.host + '/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: model, prompt: full, stream: false, format: 'json', options: { temperature: 0 } }), signal: ogAbort.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const raw = JSON.parse((await res.json()).response);
+    let env = (raw && raw.type === 'runbook' && raw.body) ? raw : (raw && raw.body && Array.isArray(raw.body.steps)) ? raw : (raw && Array.isArray(raw.steps)) ? { meta: { title: raw.title || 'Untitled' }, body: raw } : null;
+    if (!env || !env.body || !Array.isArray(env.body.steps) || !env.body.steps.length) throw new Error('The model did not return a runbook I can read.');
+    env.format = 'localoffice/v1'; env.type = 'runbook'; if (!env.meta) env.meta = { title: 'Untitled' };
+    ogPending = env;
+    pv.textContent = 'Title: ' + (env.meta.title || '(untitled)') + '\n' + env.body.steps.length + ' step(s).';
+    pv.classList.remove('hidden'); ap.classList.remove('hidden');
+    st.textContent = 'Drafted in ' + ((Date.now() - t0) / 1000).toFixed(1) + 's. Review, then Apply.';
+  } catch (e) { st.classList.add('err'); st.textContent = (e.name === 'AbortError') ? 'Stopped.' : ('Error: ' + e.message); }
+  finally { clearInterval(tk); gb.classList.remove('hidden'); sb.classList.add('hidden'); ogAbort = null; }
+}
+function ogApply() {
+  if (!ogPending) return; const st = document.getElementById('ai-status'); const env = ogPending;
+  try { applyOpened(env); ogPending = null; document.getElementById('gen-preview').classList.add('hidden'); document.getElementById('gen-apply').classList.add('hidden'); st.classList.remove('err'); st.textContent = 'Applied — nothing left your machine. Sign-off still gated by the kernel.'; }
+  catch (e) { st.classList.add('err'); st.textContent = 'Could not apply: ' + (e && e.message || e); }
+}
 
 if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localCheck' }, '*');
 </script>

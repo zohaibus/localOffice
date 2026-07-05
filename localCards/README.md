@@ -10,9 +10,9 @@
 No accounts. No cloud. No subscription. No analytics. No tracking. One HTML file.
 
 <p align="center">
-  <a href="https://zohaibus.github.io/localOffice//localCards/localCards.html"><img src="https://github.com/user-attachments/assets/d69623c0-f19f-4898-9e70-a20c470757ce" alt="localCards demo (animated)" width="820"></a>
+  <a href="https://zohaibus.github.io/localOffice/localCards/localCards.html"><img src="https://github.com/user-attachments/assets/d69623c0-f19f-4898-9e70-a20c470757ce" alt="localCards demo (animated)" width="820"></a>
 </p>
-<p align="center"><a href="https://zohaibus.github.io/localOffice//localCards/localCards.html"><b>▶ Open localCards</b></a></p>
+<p align="center"><a href="https://zohaibus.github.io/localOffice/localCards/localCards.html"><b>▶ Open localCards</b></a></p>
 
 Part of [**LocalOffice**](../README.md), a family of single-file, local-first
 tools that share one JSON format (`localoffice/v1`).
@@ -243,7 +243,7 @@ you use the AI panel.
 ```
 localCards/
 ├── localCards.html    # The entire application (inlines the shared core + verify kernel)
-├── verify-cards.js    # Headless (Playwright) verification, 100 checks
+├── verify-cards.js    # Headless (Playwright) verification, 104 checks
 ├── OLLAMA_SETUP.md    # One-time local-AI setup (optional)
 └── README.md          # This file
 ```

@@ -45,6 +45,14 @@ children drop in at a sensible offset, and where they end up is up to you.
   link to the node it branches from.
 - Optional **cross-links**: labeled connections between any two nodes (the `edges`
   array). Select a node, click **Link**, click the target, type a label.
+- **Editable connections:** click any connection (tree link *or* cross-link) to
+  **label** it and set a **style** — line, arrow, double-arrow, or dashed — or
+  **drag its endpoint** onto another node to re-connect (re-parents a tree link).
+- **Shapes & colours:** per-node shape (rounded, rectangle, circle, diamond,
+  triangle, logic gates) and a full colour palette (named swatches + custom hex).
+  Delete is node-only (children re-parent up); **Shift+Del** deletes the branch.
+- Shapes, colours, and connection styles render the same when the map is
+  **embedded** in another tool or **exported** (via the shared `LocalRender`).
 
 ### Keyboard
 
@@ -199,7 +207,7 @@ Modern Chrome, Edge, Firefox, Safari. **Chrome and Edge** get in-place **Save**
 ```
 localMindMap/
 ├── index.html          # The entire application (inlines the shared LocalOffice core)
-├── verify-mindmap.js   # Headless (Playwright) verification (88 checks)
+├── verify-mindmap.js   # Headless (Playwright) verification (122 checks)
 └── README.md           # This file
 ```
 

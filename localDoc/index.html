@@ -161,6 +161,15 @@
   <button id="export-btn" onclick="exportMarkdown()" title="Export Markdown">Export MD</button>
   <div class="sep"></div>
   <button onclick="addBlock()">+ Section</button>
+  <select id="embed-add" class="embed-add" title="Embed a live, editable object from another LocalOffice tool" onchange="if(this.value){addEmbedBlock(this.value);this.value='';}">
+    <option value="">+ Embed ▾</option>
+    <option value="mindmap">Mind map</option>
+    <option value="sheet">Sheet</option>
+    <option value="runbook">Runbook</option>
+    <option value="flashcards">Flashcards</option>
+    <option value="plan">Plan</option>
+    <option value="slides">Slides</option>
+  </select>
   <button onclick="AI.show()" title="Local AI - optional, needs Ollama. Routes text; you decide.">✦ AI</button>
   <div class="spacer"></div>
   <span id="status"></span>
@@ -189,6 +198,26 @@
   <span class="fmt-hint">selection if any, else whole doc</span>
 </div>
 
+<style>
+.block.embed .head { margin-bottom: 8px; }
+.block.embed .etag { font-size: 12px; font-weight: 600; color: var(--ink-2, #5a5a55); background: var(--bg, #f2f1ec); border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.block.embed .etitle { flex: 1; }
+.block.embed .edit { font-size: 12px; }
+.embed-render { border: 1px solid var(--border-strong, rgba(0,0,0,.18)); border-radius: 10px; background: var(--bg, #fafaf7); padding: 14px 16px; font-size: 26px; color: var(--ink, #1a1a17); display: flex; align-items: center; justify-content: center; min-height: 90px; overflow: auto; cursor: pointer; }
+.embed-render > * { max-width: 100%; }
+.embed-render .lo-r-svg { width: 100%; height: 300px; }
+.embed-ph { border: 1px dashed var(--border-strong, rgba(0,0,0,.28)); border-top: 0; border-radius: 0 0 10px 10px; padding: 8px 14px; font-size: 12px; color: var(--ink-2, #5a5a55); }
+/* live editor modal */
+#embed-editor { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; padding: 22px; }
+#embed-editor.on { display: flex; }
+#embed-editor .ee-m { background: var(--surface, #fff); color: var(--ink, #1a1a17); border: 1px solid var(--border-strong, rgba(0,0,0,.18)); border-radius: 12px; width: 1040px; max-width: 100%; height: 88vh; display: flex; flex-direction: column; box-shadow: 0 18px 60px rgba(0,0,0,.4); }
+#embed-editor .ee-h { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border, rgba(0,0,0,.1)); }
+#embed-editor .ee-h b { font-size: 14px; }
+#embed-editor .ee-note { flex: 1; font-size: 12px; color: var(--ink-2, #5a5a55); }
+#embed-editor .ee-body { flex: 1; overflow: hidden; }
+#embed-editor .ee-frame { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+.embed-add { font: inherit; }
+</style>
 <main><div class="wrap" id="blocks"></div></main>
 
 <div class="lintbar" id="lintbar">
@@ -200,8 +229,17 @@
   <div class="ai-head"><strong>✦ Local AI</strong><span class="status" id="ai-status">…</span>
     <button onclick="AI.hide()" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--ink-2)">✕</button></div>
   <div class="ai-body">
-    <div class="ai-fence"><b>The AI proposes; you decide.</b> It routes pasted raw text (a Slack thread, notes) into your document's sections - but the **compliance check is always the deterministic kernel**, never the AI. Talks only to your local Ollama at <code>localhost:11434</code>.</div>
+    <div class="ai-fence"><b>The AI proposes; you decide.</b> Generate a whole document from a description, or route pasted notes into your existing sections - either way the <b>compliance check is always the deterministic kernel</b>, never the AI. Talks only to your local Ollama at <code>localhost:11434</code>.</div>
     <label>Model <select id="ai-model"><option value="">(detecting…)</option></select></label>
+    <div class="ai-section">
+      <h3 style="font-size:13px;margin-bottom:6px">Generate a document</h3>
+      <textarea id="ai-gen-input" placeholder="Describe the doc, e.g.: an incident postmortem in compliance mode; the Mitigation section must require the keywords patch and deploy"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="primary" id="ai-gen-btn">Generate</button><button id="ai-gen-stop" class="hidden">Stop</button>
+      </div>
+      <div id="ai-gen-preview" class="hidden" style="margin-top:10px;font-size:12px;white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;max-height:34vh;overflow:auto"></div>
+      <button class="primary hidden" id="ai-gen-apply" style="margin-top:8px">Apply (replace document)</button>
+    </div>
     <div class="ai-section">
       <h3 style="font-size:13px;margin-bottom:6px">Distill into sections</h3>
       <textarea id="ai-input" placeholder="Paste raw notes / a transcript…"></textarea>
@@ -325,7 +363,10 @@ function canExport() { return lintReport().pass; }
 // ── markdown export ───────────────────────────────────────────────────
 function toMarkdown() {
   let s = '# ' + (title || 'Untitled') + '\n';
-  data.blocks.forEach(b => { s += '\n## ' + (b.heading || '') + '\n\n' + (b.text || '') + '\n'; });
+  data.blocks.forEach(b => {
+    if (b.embed) { const env = b.embed.envelope || {}; const tl = (env.meta && env.meta.title) || env.type || 'object'; s += '\n## ' + tl + '\n\n> Embedded ' + (env.type || 'object') + ' — see the ' + (LocalOffice.FILE_EXT || '.localoffice.json') + ' file for the live data.\n'; return; }
+    s += '\n## ' + (b.heading || '') + '\n\n' + (b.text || '') + '\n';
+  });
   return s.trim() + '\n';
 }
 function exportMarkdown() {
@@ -544,6 +585,187 @@ function removeBlock(id) { pushHistory(); data.blocks = data.blocks.filter(b => 
 function moveBlock(id, d) { const i = data.blocks.findIndex(b => b.id === id); const j = i + d; if (i < 0 || j < 0 || j >= data.blocks.length) return; pushHistory(); const t = data.blocks[i]; data.blocks[i] = data.blocks[j]; data.blocks[j] = t; render(); }
 function byId(id) { return data.blocks.find(b => b.id === id); }
 
+// ── embedded objects: host another tool's localoffice object as a live, editable iframe ──
+// The nested localoffice/v1 envelope lives inside this doc's body (block.embed.envelope),
+// so it round-trips through save/load even for tools that can't render it. Live edits in the
+// child are pushed back here (embedState) and cached; on any host serialize the latest is kept.
+// ── shared static renderer (inlined from src/render.js) — draws any embedded
+//    object's body as self-contained HTML/SVG for the inline view + export. ──
+(function (factory) {
+  const mod = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
+  if (typeof window !== 'undefined') window.LocalRender = mod;
+})(function () {
+  const LABELS = { mindmap: 'Mind map', sheet: 'Sheet', runbook: 'Runbook', flashcards: 'Flashcards', plan: 'Plan', slides: 'Slides', doc: 'Document', image: 'Image' };
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function colToIdx(letters) { let n = 0; for (let i = 0; i < letters.length; i++) n = n * 26 + (letters.charCodeAt(i) - 64); return n - 1; }
+  function titleOf(env) { env = env || {}; return (env.meta && env.meta.title) || LABELS[env.type] || env.type || 'object'; }
+  function summary(env) {
+    env = env || {}; const b = env.body || {};
+    switch (env.type) {
+      case 'mindmap': { const n = (b.nodes || []).length; return n + ' node' + (n === 1 ? '' : 's'); }
+      case 'sheet': { const s = b.sheets && b.sheets[0]; return s ? (Object.keys(s.cells || {}).length + ' cells') : '0 cells'; }
+      case 'runbook': { const n = (b.steps || []).length; return n + ' step' + (n === 1 ? '' : 's'); }
+      case 'flashcards': { const n = (b.cards || []).length; return n + ' card' + (n === 1 ? '' : 's'); }
+      case 'plan': { const n = (b.tracks || []).length; return n + ' track' + (n === 1 ? '' : 's'); }
+      case 'slides': { const n = (b.slides || []).length; return n + ' slide' + (n === 1 ? '' : 's'); }
+      case 'doc': { const n = (b.blocks || []).length; return n + ' section' + (n === 1 ? '' : 's'); }
+      default: return '';
+    }
+  }
+  function card(env) {
+    const label = LABELS[(env && env.type)] || (env && env.type) || 'object'; const sum = summary(env);
+    return '<div class="lo-r-card" style="text-align:center;border:1px solid currentColor;border-radius:.5em;padding:.9em 1.1em;display:inline-block">' +
+      '<div style="font-size:.62em;opacity:.7;letter-spacing:.04em">◲ ' + esc(label) + '</div><div style="margin-top:.2em">' + esc(titleOf(env)) + '</div>' +
+      (sum ? '<div style="font-size:.6em;opacity:.6;margin-top:.15em">' + esc(sum) + '</div>' : '') + '</div>';
+  }
+  function sheet(body, opts) {
+    const sh = (body.sheets && body.sheets[0]) || { cells: {} }; const cells = sh.cells || {}; const parsed = {}; let maxC = 0, maxR = 0, any = false;
+    Object.keys(cells).forEach(k => { const m = /^([A-Za-z]+)(\d+)$/.exec(k); if (!m) return; const c = colToIdx(m[1].toUpperCase()), r = parseInt(m[2], 10) - 1; if (c < 0 || r < 0) return; parsed[c + ',' + r] = cells[k]; any = true; if (c > maxC) maxC = c; if (r > maxR) maxR = r; });
+    if (!any) return card({ type: 'sheet', body: body });
+    const safeCol = s => (typeof s === 'string' && /^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]+$/.test(s)) ? s : '';
+    const capC = (opts && opts.maxCols) || 8, capR = (opts && opts.maxRows) || 16; const cC = Math.min(maxC, capC - 1), cR = Math.min(maxR, capR - 1);
+    let html = '<table class="lo-r-table" style="border-collapse:collapse;width:100%;font-size:.5em;line-height:1.35;font-variant-numeric:tabular-nums">';
+    for (let r = 0; r <= cR; r++) {
+      html += '<tr>';
+      for (let c = 0; c <= cC; c++) {
+        const cell = parsed[c + ',' + r]; const v = cell ? (cell.v != null ? cell.v : (cell.f ? ('=' + cell.f) : '')) : '';
+        const fmt = (cell && cell.format) || {}; const head = r === 0; const bg = safeCol(fmt.bg), fg = safeCol(fmt.fg);
+        const style = 'border:1px solid rgba(128,128,128,.5);padding:.16em .42em;text-align:' + (fmt.align || (typeof v === 'number' ? 'right' : 'left')) + ';' +
+          (bg ? ('background:' + bg + ';') : (head ? 'background:rgba(128,128,128,.14);' : '')) + (fg ? ('color:' + fg + ';') : '') +
+          ((fmt.bold || head) ? 'font-weight:700;' : '') + (fmt.italic ? 'font-style:italic;' : '');
+        html += '<' + (head ? 'th' : 'td') + ' style="' + style + '">' + esc(v) + '</' + (head ? 'th' : 'td') + '>';
+      }
+      html += '</tr>';
+    }
+    return html + '</table>';
+  }
+  function mindmapSVG(body) {
+    const placed = (body.nodes || []).filter(n => n && Number.isFinite(n.x) && Number.isFinite(n.y));
+    if (placed.length < 1) return '';
+    const byId = {}; (body.nodes || []).forEach(n => { byId[n.id] = n; });
+    const CMAP = { blue: '#5b87d6', green: '#5d9b48', red: '#cf6655', amber: '#c39a36', purple: '#8a6dc8' };
+    const col = n => CMAP[n.color] || ((typeof n.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(n.color)) ? n.color : 'currentColor');
+    const sizeOf = n => { const lab = String(n.text == null ? '' : n.text).slice(0, 22); const tw = Math.max(46, Math.min(190, 24 + lab.length * 8.4)), th = 30; if (n.kind === 'circle') { const d = Math.max(tw, th) + 8; return { w: d, h: d }; } if (n.kind === 'triangle') { return { w: tw + 12, h: th + 16 }; } if (n.kind === 'diamond') { return { w: tw + 20, h: th + 22 }; } return { w: tw, h: th }; };
+    const bp = (from, to) => { const s = sizeOf(from), hw = s.w / 2 + 3, hh = s.h / 2 + 3, dx = to.x - from.x, dy = to.y - from.y; if (dx === 0 && dy === 0) return { x: from.x, y: from.y }; const t = Math.min(dx !== 0 ? hw / Math.abs(dx) : Infinity, dy !== 0 ? hh / Math.abs(dy) : Infinity); return { x: from.x + dx * t, y: from.y + dy * t }; };
+    const curve = (a, b) => { const p = bp(a, b), q = bp(b, a); const mx = (p.x + q.x) / 2; return 'M ' + p.x + ' ' + p.y + ' C ' + mx + ' ' + p.y + ', ' + mx + ' ' + q.y + ', ' + q.x + ' ' + q.y; };
+    const styleAttrs = st => (st === 'dashed' ? ' stroke-dasharray="6 5"' : '') + ((st === 'arrow' || st === 'arrow2') ? ' marker-end="url(#lr-arw)"' : '') + (st === 'arrow2' ? ' marker-start="url(#lr-arw)"' : '');
+    const xs = placed.map(n => n.x), ys = placed.map(n => n.y), pad = 70;
+    const minX = Math.min.apply(null, xs) - pad, maxX = Math.max.apply(null, xs) + pad, minY = Math.min.apply(null, ys) - pad, maxY = Math.max.apply(null, ys) + pad;
+    const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
+    const marker = '<defs><marker id="lr-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>';
+    const lbl = (a, b, t) => { const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; return '<text x="' + mx + '" y="' + (my - 4) + '" text-anchor="middle" font-size="12" fill="currentColor" fill-opacity="0.75">' + esc(t) + '</text>'; };
+    let edges = '';
+    (body.nodes || []).forEach(n => { const p = n.parent && byId[n.parent]; if (!(p && Number.isFinite(n.x) && Number.isFinite(p.x))) return; const st = n.linkStyle || 'line'; edges += '<path d="' + curve(p, n) + '" fill="none" stroke="currentColor" stroke-opacity="0.35" stroke-width="2"' + styleAttrs(st) + '/>'; if (n.linkLabel) edges += lbl(p, n, n.linkLabel); });
+    (body.edges || []).forEach(e => { const a = byId[e.from], b = byId[e.to]; if (!a || !b || !Number.isFinite(a.x) || !Number.isFinite(b.x)) return; const st = e.style || 'line'; edges += '<path d="' + curve(a, b) + '" fill="none" stroke="currentColor" stroke-opacity="0.55" stroke-width="2"' + styleAttrs(st) + '/>'; if (e.label) edges += lbl(a, b, e.label); });
+    const shapes = placed.map(n => {
+      const label = String(n.text == null ? '' : n.text).slice(0, 22);
+      const tw = Math.max(46, Math.min(190, 24 + label.length * 8.4)), th = 30, c = col(n);
+      const fillA = ' fill="' + c + '" fill-opacity="0.18" stroke="' + c + '" stroke-opacity="0.78" stroke-width="1.5"';
+      const txt = '<text x="' + n.x + '" y="' + (n.y + 4.5) + '" text-anchor="middle" font-size="14" fill="currentColor">' + esc(label) + '</text>';
+      if (n.kind === 'circle') { const r = Math.max(tw, th) / 2 + 4; return '<g><circle cx="' + n.x + '" cy="' + n.y + '" r="' + r + '"' + fillA + '/>' + txt + '</g>'; }
+      if (n.kind === 'triangle') { const hw = tw / 2 + 6, hh = th / 2 + 8, pts = n.x + ',' + (n.y - hh) + ' ' + (n.x + hw) + ',' + (n.y + hh) + ' ' + (n.x - hw) + ',' + (n.y + hh); return '<g><polygon points="' + pts + '"' + fillA + '/><text x="' + n.x + '" y="' + (n.y + hh - 8) + '" text-anchor="middle" font-size="13" fill="currentColor">' + esc(label) + '</text></g>'; }
+      if (n.kind === 'diamond') { const hw = tw / 2 + 10, hh = th / 2 + 11, pts = n.x + ',' + (n.y - hh) + ' ' + (n.x + hw) + ',' + n.y + ' ' + n.x + ',' + (n.y + hh) + ' ' + (n.x - hw) + ',' + n.y; return '<g><polygon points="' + pts + '"' + fillA + '/>' + txt + '</g>'; }
+      const rx = (n.kind === 'rect') ? 0 : 8;   // rect = sharp corners, default = rounded
+      return '<g><rect x="' + (n.x - tw / 2) + '" y="' + (n.y - th / 2) + '" width="' + tw + '" height="' + th + '" rx="' + rx + '"' + fillA + '/>' + txt + '</g>';
+    }).join('');
+    return '<svg class="lo-r-svg" viewBox="' + minX + ' ' + minY + ' ' + w + ' ' + h + '" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%">' + marker + edges + shapes + '</svg>';
+  }
+  function mindmap(body) { const svg = mindmapSVG(body); return svg || card({ type: 'mindmap', body: body }); }
+  function runbook(body, opts) { const steps = (body.steps || []).slice(0, (opts && opts.maxRows) || 16); if (!steps.length) return card({ type: 'runbook', body: body }); let html = '<ul class="lo-r-list" style="list-style:none;margin:0;padding:0;font-size:.58em;line-height:1.5;text-align:left">'; steps.forEach(s => { const mark = s.kind === 'note' ? '•' : ((s.done || (s.result && s.result.pass)) ? '☑' : '☐'); html += '<li style="display:flex;gap:.5em"><span>' + mark + '</span><span>' + esc(s.text || '') + '</span></li>'; }); return html + '</ul>'; }
+  function doc(body, opts) { const blocks = (body.blocks || []).slice(0, (opts && opts.maxRows) || 12); if (!blocks.length) return card({ type: 'doc', body: body }); let html = '<div class="lo-r-doc" style="font-size:.55em;line-height:1.4;text-align:left">'; blocks.forEach(b => { if (b.heading) html += '<div style="font-weight:700;margin:.4em 0 .12em">' + esc(b.heading) + '</div>'; if (b.text) html += '<div style="opacity:.85">' + esc(String(b.text).replace(/[#>*`_]/g, '').slice(0, 220)) + '</div>'; }); return html + '</div>'; }
+  function plan(body, opts) { const tracks = (body.tracks || []).slice(0, (opts && opts.maxRows) || 6); if (!tracks.length) return card({ type: 'plan', body: body }); let html = '<div class="lo-r-plan" style="font-size:.55em;line-height:1.4;text-align:left">'; tracks.forEach(t => { html += '<div style="font-weight:700;margin-top:.3em">' + esc(t.title || '') + '</div>'; (t.sections || []).slice(0, 3).forEach(sec => { const items = (sec.items || []).slice(0, 4).map(i => esc(i.text || '')).filter(Boolean).join(', '); html += '<div style="opacity:.8">' + esc(sec.name || '') + (items ? ': ' + items : '') + '</div>'; }); }); return html + '</div>'; }
+  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> — ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
+  function slides(body, opts) { const ss = body.slides || []; if (!ss.length) return card({ type: 'slides', body: body }); let html = '<div class="lo-r-slides" style="font-size:.55em;line-height:1.5;text-align:left">'; ss.slice(0, (opts && opts.maxRows) || 10).forEach((s, i) => { const tb = (s.blocks || []).find(b => b.role === 'title' || b.type === 'text'); const t = (tb && tb.content) || ('Slide ' + (i + 1)); html += '<div>' + (i + 1) + '. ' + esc(t) + '</div>'; }); return html + '</div>'; }
+  function render(env, opts) { env = env || {}; const body = env.body || {}; switch (env.type) { case 'sheet': return sheet(body, opts); case 'mindmap': return mindmap(body, opts); case 'runbook': return runbook(body, opts); case 'doc': return doc(body, opts); case 'plan': return plan(body, opts); case 'flashcards': return flashcards(body, opts); case 'slides': return slides(body, opts); default: return card(env); } }
+  return { render, card, summary, titleOf, mindmapSVG, LABELS };
+});
+
+const EMBED_TOOLS = {
+  mindmap:    { src: '../localMindMap/index.html',     label: 'Mind map' },
+  sheet:      { src: '../localSheets/localsheets.html', label: 'Sheet' },
+  runbook:    { src: '../localCheck/index.html',        label: 'Runbook' },
+  flashcards: { src: '../localCards/localCards.html',   label: 'Flashcards' },
+  plan:       { src: '../localPlan/index.html',         label: 'Plan' },
+  slides:     { src: '../localDeck/localDeck.html',     label: 'Slides' },
+};
+function blankEmbedBody(type) {
+  switch (type) {
+    case 'mindmap': return { nodes: [{ id: 'r', text: 'Idea', parent: null }], edges: [] };
+    case 'sheet': return { sheets: [{ name: 'Sheet1', cells: {}, cols: 6, rows: 12 }] };
+    case 'runbook': return { steps: [{ id: 's1', kind: 'check', text: 'First step' }] };
+    case 'flashcards': return { deck: { name: 'Deck' }, scheduler: 'fsrs-lite', cards: [{ id: 'c1', front: 'Front', back: 'Back' }] };
+    case 'plan': return { planTitle: 'Plan', tracks: [{ id: 't1', icon: '•', title: 'Track', open: true, sections: [{ name: 'Now', horizon: 'now', items: [] }] }] };
+    case 'slides': return { theme: {}, slides: [{ id: 's1', layout: 'title', blocks: [] }] };
+    default: return {};
+  }
+}
+function blankEmbedEnvelope(type, title) {
+  return { format: 'localoffice/v1', type: type, meta: { title: title || (EMBED_TOOLS[type] ? EMBED_TOOLS[type].label : type) }, body: blankEmbedBody(type) };
+}
+let curEmbedEdit = null;   // { blockId, frame } while the live editor modal is open
+function addEmbedBlock(typeOrEnv) {
+  pushHistory();
+  const env = (typeOrEnv && typeof typeOrEnv === 'object') ? typeOrEnv : blankEmbedEnvelope(typeOrEnv);
+  const b = { id: uid(), embed: { envelope: env } };
+  data.blocks.push(b); render();
+  const el = document.querySelector('.block[data-id="' + b.id + '"]'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  return b;
+}
+function makeEmbedBlock(b) {
+  const env = (b.embed && b.embed.envelope) || {}; const type = env.type; const tool = EMBED_TOOLS[type];
+  const t = (env.meta && env.meta.title) || (tool ? tool.label : type) || 'object';
+  const scale = (b.embed && b.embed.scale) || 1;   // A- / A+ font scaling
+  const el = document.createElement('div'); el.className = 'block embed'; el.dataset.id = b.id;
+  el.innerHTML =
+    '<div class="head"><span class="etag">◲ ' + esc(tool ? tool.label : (type || 'object')) + '</span>' +
+    '<input class="heading etitle" type="text" value="' + esc(t) + '" placeholder="Embedded object title">' +
+    '<span class="ops"><button class="fsm" title="Smaller">A−</button><button class="fsp" title="Larger">A+</button>' + (tool ? '<button class="edit" title="Edit this object">Edit ◲</button>' : '') +
+    '<button class="up" title="Move up">↑</button><button class="down" title="Move down">↓</button><button class="rm" title="Remove">✕</button></span></div>' +
+    '<div class="embed-render" style="font-size:' + (26 * scale).toFixed(1) + 'px"' + (tool ? ' title="Double-click to edit"' : '') + '>' + LocalRender.render(env) + '</div>' +
+    (tool ? '' : '<div class="embed-ph">Its editor isn\'t available here, but the data is preserved on save — open the file in its own tool to edit.</div>');
+  el.querySelector('.rm').addEventListener('click', () => removeBlock(b.id));
+  el.querySelector('.up').addEventListener('click', () => moveBlock(b.id, -1));
+  el.querySelector('.down').addEventListener('click', () => moveBlock(b.id, 1));
+  el.querySelector('.etitle').addEventListener('change', e => { if (!b.embed.envelope.meta) b.embed.envelope.meta = {}; b.embed.envelope.meta.title = e.target.value; });
+  const rescale = (d) => { b.embed.scale = Math.min(2.5, Math.max(0.5, ((b.embed.scale || 1) + d))); render(); };
+  el.querySelector('.fsm').addEventListener('click', () => rescale(-0.15));
+  el.querySelector('.fsp').addEventListener('click', () => rescale(0.15));
+  if (tool) {
+    const ed = el.querySelector('.edit'); if (ed) ed.addEventListener('click', () => openEmbedEditor(b));
+    const rend = el.querySelector('.embed-render'); if (rend) rend.addEventListener('dblclick', () => openEmbedEditor(b));
+  }
+  return el;
+}
+// Live editor modal: runs the real tool in an iframe and streams its edits back into the block.
+function openEmbedEditor(b) {
+  const env = b.embed && b.embed.envelope; if (!env || !EMBED_TOOLS[env.type]) return;
+  let host = document.getElementById('embed-editor');
+  if (!host) {
+    host = document.createElement('div'); host.id = 'embed-editor';
+    host.innerHTML = '<div class="ee-m"><div class="ee-h"><b></b><span class="ee-note">Edits stream back into the document. Nothing leaves your machine.</span><button data-a="done">Done</button></div><div class="ee-body"><iframe class="ee-frame" title="Embedded editor"></iframe></div></div>';
+    document.body.appendChild(host);
+    host.querySelector('[data-a="done"]').addEventListener('click', closeEmbedEditor);
+    host.addEventListener('mousedown', e => { if (e.target === host) closeEmbedEditor(); });
+  }
+  host.querySelector('.ee-h b').textContent = '◲ ' + (EMBED_TOOLS[env.type].label || env.type);
+  const frame = host.querySelector('.ee-frame'); frame.src = EMBED_TOOLS[env.type].src;
+  curEmbedEdit = { blockId: b.id, frame };
+  host.classList.add('on');
+}
+function closeEmbedEditor() {
+  const host = document.getElementById('embed-editor'); if (host) { host.classList.remove('on'); const fr = host.querySelector('.ee-frame'); if (fr) fr.src = 'about:blank'; }
+  curEmbedEdit = null; render();
+}
+// Host side of the embed protocol: feed the open editor its object, capture its live edits.
+window.addEventListener('message', e => {
+  const m = e.data; if (!m || m.proto !== 'localoffice') return;
+  if (!curEmbedEdit || e.source !== curEmbedEdit.frame.contentWindow) return;
+  const b = byId(curEmbedEdit.blockId); if (!b || !b.embed) return;
+  if (m.type === 'ready') { try { e.source.postMessage({ proto: 'localoffice', type: 'open', embedded: true, text: JSON.stringify(b.embed.envelope) }, '*'); } catch (_) {} }
+  else if (m.type === 'embedState') { try { const env = JSON.parse(m.text); if (env && env.type) b.embed.envelope = env; } catch (_) {} }
+});
+
 // ── render ────────────────────────────────────────────────────────────
 function render() {
   $('title').value = title;
@@ -566,6 +788,7 @@ function render() {
 function badgeHtml(b) { const r = lintBlock(b); return r ? (r.pass ? '<span class="badge ok">compliant</span>' : '<span class="badge bad">missing: ' + esc(r.detail.missed.join(', ')) + '</span>') : ''; }
 function updateBadgeFor(b) { const el = document.querySelector('.block[data-id="' + b.id + '"] .bdg'); if (el) el.innerHTML = badgeHtml(b); }
 function makeBlock(b) {
+  if (b.embed) return makeEmbedBlock(b);
   const el = document.createElement('div'); el.className = 'block'; el.dataset.id = b.id;
   const editor = isWys()
     ? '<div class="text ce" contenteditable="true" data-ph="Write…"></div>'
@@ -718,8 +941,42 @@ function aiApply() {
   pendingFill = null; $('ai-preview').classList.add('hidden'); $('ai-apply').classList.add('hidden'); $('ai-input').value = '';
   render(); setAiStatus('Filled the sections - the compliance check is still the kernel\'s, not the AI\'s.');
 }
+// Generate a WHOLE document from a description via the local model, using the same
+// build prompt as the JSON panel's ✦ Prompt. The model drafts; you preview and
+// Apply; the compliance verdict is still the kernel's after it renders.
+let pendingGen = null;
+async function aiGenerate() {
+  const desc = $('ai-gen-input').value.trim(); if (!desc) { setAiStatus('Describe the document first.', true); return; }
+  const gb = $('ai-gen-btn'), stop = $('ai-gen-stop'); gb.classList.add('hidden'); stop.classList.remove('hidden');
+  try {
+    const prompt = LOCALDOC_PROMPT.replace('<describe the document you want>', () => desc);   // fn-replacement: no $ substitution
+    const raw = await AI.generateJSON(prompt);
+    // Accept a full envelope, an envelope-with-body, or a bare body { blocks:[...] }.
+    let env = (raw && raw.type === 'doc' && raw.body) ? raw
+            : (raw && raw.body && Array.isArray(raw.body.blocks)) ? raw
+            : (raw && Array.isArray(raw.blocks)) ? { meta: { title: raw.title || 'Untitled doc' }, body: raw }
+            : null;
+    if (!env || !env.body || !Array.isArray(env.body.blocks) || !env.body.blocks.length) throw new Error('The model did not return a doc I can read.');
+    env.format = 'localoffice/v1'; env.type = 'doc'; if (!env.meta) env.meta = { title: 'Untitled doc' };
+    pendingGen = env;
+    const b = env.body;
+    $('ai-gen-preview').textContent = 'Title: ' + (env.meta.title || '(untitled)') + '\nMode: ' + (b.docMode || 'compliance') +
+      '\nSections:\n' + b.blocks.map(x => '  • ' + (x.heading || '(untitled)') + (Array.isArray(x.required) && x.required.length ? '   [gated: ' + x.required.join(', ') + ']' : '')).join('\n');
+    $('ai-gen-preview').classList.remove('hidden'); $('ai-gen-apply').classList.remove('hidden');
+    setAiStatus('Drafted a document - review, then Apply. Export stays gated by the kernel.');
+  } catch (e) { setAiStatus(e.name === 'AbortError' ? 'Cancelled.' : ('Error: ' + e.message), true); }
+  finally { gb.classList.remove('hidden'); stop.classList.add('hidden'); }
+}
+function aiGenApply() {
+  if (!pendingGen) return;
+  try { applyOpened(pendingGen); pendingGen = null; $('ai-gen-preview').classList.add('hidden'); $('ai-gen-apply').classList.add('hidden'); $('ai-gen-input').value = ''; setAiStatus("Applied. The compliance verdict is the kernel's, not the AI's."); }
+  catch (e) { setAiStatus('Could not apply: ' + (e && e.message || e), true); }
+}
 $('ai-btn').addEventListener('click', aiDistill);
 $('ai-apply').addEventListener('click', aiApply);
+$('ai-gen-btn').addEventListener('click', aiGenerate);
+$('ai-gen-apply').addEventListener('click', aiGenApply);
+$('ai-gen-stop').addEventListener('click', () => { if (AI.abort) AI.abort.abort(); });
 $('ai-stop').addEventListener('click', () => { if (AI.abort) AI.abort.abort(); });
 $('ai-model').addEventListener('change', e => { AI.model = e.target.value; });
 window.AI = AI;
@@ -757,18 +1014,19 @@ render();
 // ── shared JSON inspector: view / edit / apply / copy / download (inlined) ──
 const JsonPanel = (function () {
   'use strict';
-  let host, ta, info, hooks = null, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
+  let host, ta, info, hooks = null, promptText = '', showingPrompt = false, name = 'document' + (LocalOffice.FILE_EXT || '.localoffice.json');
   function build() {
     const s = document.createElement('style');
     s.textContent = '#jp{position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:24px}#jp.on{display:flex}#jp .m{background:var(--surface,#fff);color:var(--ink,#1a1a17);border:1px solid var(--border-strong,rgba(0,0,0,.18));border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);width:780px;max-width:100%;max-height:88vh;display:flex;flex-direction:column}#jp .h{display:flex;gap:8px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border,rgba(0,0,0,.1))}#jp .h b{flex:1;font-size:14px}#jp textarea{flex:1;min-height:320px;border:0;outline:none;resize:none;padding:12px 14px;background:var(--bg,#fafaf7);color:var(--ink,#1a1a17);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}#jp .f{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border,rgba(0,0,0,.1))}#jp .f .i{flex:1;font-size:12px;color:var(--ink-2,#5a5a55)}#jp .f .i.bad{color:#cd2b31}#jp .f .i.ok{color:#2f7d3a}#jp button{font:inherit;font-size:13px;padding:7px 12px;border-radius:7px;border:1px solid var(--border-strong,rgba(0,0,0,.18));background:var(--surface,#fff);color:var(--ink,#1a1a17);cursor:pointer}#jp button.p{background:var(--accent,#5a4a2f);color:var(--bg,#fff);border-color:var(--accent,#5a4a2f)}';
     document.head.appendChild(s);
     host = document.createElement('div'); host.id = 'jp';
-    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
+    host.innerHTML = '<div class="m"><div class="h"><b>JSON file</b><button data-a="prompt" hidden>✦ Prompt</button><button data-a="copy">Copy</button><button data-a="dl">Download</button><button data-a="x">Close</button></div><textarea spellcheck="false"></textarea><div class="f"><span class="i" data-i></span><button class="p" data-a="apply">Apply edits</button></div></div>';
     document.body.appendChild(host);
     ta = host.querySelector('textarea'); info = host.querySelector('[data-i]');
     const on = (a, fn) => host.querySelector('[data-a="' + a + '"]').addEventListener('click', fn);
     on('x', hide);
-    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say('Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
+    on('prompt', togglePrompt);
+    on('copy', async () => { try { await navigator.clipboard.writeText(ta.value); say(showingPrompt ? 'Prompt copied - paste it into your LLM.' : 'Copied.', 'ok'); } catch (e) { say('Copy failed.', 'bad'); } });
     on('dl', () => { LocalOffice.download(ta.value, name, 'application/json'); say('Downloaded ' + name, 'ok'); });
     on('apply', apply);
     host.addEventListener('mousedown', e => { if (e.target === host) hide(); });
@@ -776,14 +1034,24 @@ const JsonPanel = (function () {
   }
   function say(t, c) { info.textContent = t || ''; info.className = 'i' + (c ? ' ' + c : ''); }
   function hide() { host.classList.remove('on'); }
+  // Show a copy-ready "build this file with any LLM" prompt in place of the JSON.
+  // The tool never calls the model - you paste the prompt into your own LLM
+  // (local / on-prem / cloud), then paste the returned JSON back here and Apply.
+  function togglePrompt() {
+    const pb = host.querySelector('[data-a="prompt"]');
+    if (!showingPrompt) { ta.value = promptText; showingPrompt = true; pb.textContent = '← JSON'; say('Copy this into any LLM (local, on-prem, or your own cloud), then paste the JSON it returns here and Apply.', 'ok'); }
+    else { ta.value = hooks.getText(); showingPrompt = false; pb.textContent = '✦ Prompt'; say(''); }
+    ta.scrollTop = 0;
+  }
   function nameOf(t) { try { return LocalOffice.suggestedName(LocalOffice.parse(t).envelope); } catch (e) { return 'document' + (LocalOffice.FILE_EXT || '.localoffice.json'); } }
   async function apply() {
     try { LocalOffice.parse(ta.value); await hooks.applyText(ta.value); name = nameOf(ta.value); say('Applied. Use Save to write it to disk.', 'ok'); }
     catch (e) { say('Not applied (invalid JSON or wrong type): ' + (e && e.message || e), 'bad'); }
   }
-  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); say(''); host.classList.add('on'); ta.focus(); }
+  function open() { if (!hooks) return; let t; try { t = hooks.getText(); } catch (e) { t = ''; } ta.value = t; name = nameOf(t); showingPrompt = false; const pb = host.querySelector('[data-a="prompt"]'); if (pb) pb.textContent = '✦ Prompt'; say(''); host.classList.add('on'); ta.focus(); }
   function init(h) {
-    hooks = h; if (!host) build();
+    hooks = h; promptText = (h && h.prompt) || ''; if (!host) build();
+    const pb = host.querySelector('[data-a="prompt"]'); if (pb) pb.hidden = !promptText;
     const btn = document.createElement('button'); btn.textContent = 'JSON'; btn.title = 'View / edit the raw JSON file';
     const anchor = document.querySelector('#theme-btn, #btn-theme, #btn-mode');
     if (anchor && anchor.parentNode) { btn.className = anchor.className; anchor.parentNode.insertBefore(btn, anchor); }
@@ -792,7 +1060,66 @@ const JsonPanel = (function () {
   }
   return { init, open };
 })();
-JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpened(LocalOffice.parse(t).envelope) });
+const LOCALDOC_PROMPT = `You output ONE localoffice/v1 "doc" file as JSON. Reply with ONLY the JSON (no prose, no code fences).
+
+Shape:
+{
+  "format": "localoffice/v1",
+  "type": "doc",
+  "meta": { "title": "<short title>" },
+  "body": {
+    "docMode": "prose" | "compliance",
+    "blocks": [
+      { "id": "<unique-short-id>", "heading": "<section heading>", "text": "<body in Markdown>", "required": ["<keyword>"] }
+    ]
+  }
+}
+
+Rules:
+- "text" is Markdown: ## heading, - bullet, 1. numbered, > quote, **bold**, *italic*, \`code\`, [label](url). Use \\n for line breaks inside the string.
+- Every block needs a unique short "id".
+- docMode "prose" = free writing (export always open). "compliance" = export is blocked until each gated section contains its required keywords.
+- IMPORTANT: in "compliance" mode a section is enforced ONLY if it has a non-empty "required" array. A keyword sitting in the prose does NOT gate it - you MUST list it in "required". Use the literal stem (e.g. "deploy", not "deployed"), and make sure the section's "text" actually contains each keyword. Omit "required" (or use []) for sections you don't want gated.
+- Write realistic, specific prose. Do NOT leave fill-in placeholders like [date], [name], or [component] - invent concrete, plausible details that fit the request.
+
+Format example - this shows the SHAPE only; write your own wording, do not copy this text:
+{ "id": "mit", "heading": "Mitigation", "text": "<your own sentence that actually contains the words patch and deploy>", "required": ["patch", "deploy"] }
+
+Embedding an object (use when a section is best shown as another tool's object — a real data
+table, a diagram, or a finite-state machine — instead of prose):
+- Instead of the normal fields, a block may be an embedded object:
+  { "id": "<id>", "embed": { "envelope": {
+    "format": "localoffice/v1", "type": "<sheet|mindmap|runbook|plan|flashcards>",
+    "meta": { "title": "<object title>" }, "body": { … } } } }
+- SHEET (a real table) body: { "sheets": [ { "name": "S", "cells": {
+    "A1": {"v":"Header 1"}, "B1": {"v":"Header 2"}, "A2": {"v":"row1"}, "B2": {"v": 3} } } ] }
+    Keys are A1-style refs; {"v":…} is the value; keep numbers numeric; row 1 is the header.
+- MINDMAP (a diagram / flow / FSM) body: { "nodes": [
+    {"id":"s0","text":"IDLE","parent":null,"x":0,"y":0},
+    {"id":"s1","text":"RUN","parent":null,"x":220,"y":0} ], "edges": [ {"from":"s0","to":"s1","label":"start"} ] }
+    IMPORTANT: give EVERY node an "x" and "y" (spread ~180+ apart) so it renders. Use "parent"
+    for a tree; use "edges" for FSM transitions or flows.
+- An embed block has no "text"/"required" and never gates compliance.
+
+Now produce a doc for:
+<describe the document you want>`;
+JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpened(LocalOffice.parse(t).envelope), prompt: LOCALDOC_PROMPT });
+
+// ── embed-as-live-object: when a host tool embeds this file, feed edits back (state carryover) ──
+(function () {
+  if (window.parent === window) return;
+  var embedded = false, tmr = null;
+  function serialize() { return LocalOffice.stringify(exportData()); }
+  function push(target) { try { (target || window.parent).postMessage({ proto: 'localoffice', type: 'embedState', text: serialize() }, '*'); } catch (_) {} }
+  function schedule() { if (!embedded) return; clearTimeout(tmr); tmr = setTimeout(function () { push(); }, 400); }
+  window.addEventListener('message', function (e) {
+    var m = e.data; if (!m || m.proto !== 'localoffice') return;
+    if (m.type === 'open' && m.embedded) { embedded = true; document.body.classList.add('lo-embedded'); }
+    else if (m.type === 'embedFlush') { push(e.source || window.parent); }
+  });
+  ['input', 'change', 'keyup', 'pointerup'].forEach(function (ev) { document.addEventListener(ev, schedule, true); });
+  var st = document.createElement('style'); st.textContent = '.lo-embedded{padding:0!important}'; document.head.appendChild(st);
+})();
 
 if (window.parent && window.parent !== window) window.parent.postMessage({ proto: 'localoffice', type: 'ready', tool: 'localDoc' }, '*');
 </script>

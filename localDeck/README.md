@@ -27,7 +27,7 @@ name, account, and machine into the files you export.
 
 localDeck flips that:
 
-- The entire application is **one HTML file** (about 80 KB).
+- The entire application is **one HTML file** (about 125 KB).
 - Your deck is **one JSON file** that you own.
 - It runs **offline forever**.
 - It costs **nothing**, ever.
@@ -203,8 +203,8 @@ people who want the no-backend, no-account, single-file model.
 
 ```
 localDeck/
-├── localDeck.html     # The entire application (about 80 KB, inlines the shared core)
-├── verify-deck.js     # Headless (Playwright) verification, 98 checks
+├── localDeck.html     # The entire application (about 125 KB, inlines the shared core)
+├── verify-deck.js     # Headless (Playwright) verification, 138 checks
 ├── OLLAMA_SETUP.md    # One-time local-AI setup (optional)
 └── README.md          # This file
 ```
@@ -218,7 +218,7 @@ localDeck inlines a copy of it (the single-file rule means no `<script src>`).
 node localDeck/verify-deck.js
 ```
 
-98 checks run in headless Chromium (Playwright; install it from the repo root, see
+138 checks run in headless Chromium (Playwright; install it from the repo root, see
 the main README). The AI path is exercised with a **mocked** Ollama stream, so the
 suite passes whether or not Ollama is installed.
 A live Ollama, the PDF print dialog, and the Firefox/Safari download fallback are

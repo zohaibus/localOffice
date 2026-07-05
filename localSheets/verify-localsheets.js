@@ -230,6 +230,82 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
     return shown && applied && guarded;
   }));
 
+  // ── JSON panel: the "build a spreadsheet with any LLM" prompt toggle ──
+  check('JSON panel has a Prompt toggle with the sheet schema, then returns to JSON', await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'JSON'); btn.click();
+    const jp = document.getElementById('jp'), ta = jp.querySelector('textarea'), pb = jp.querySelector('[data-a="prompt"]');
+    if (!pb || pb.hidden) return false;
+    pb.click();
+    const shown = ta.value.includes('localoffice/v1') && ta.value.includes('"type": "sheet"') && /cells/.test(ta.value) && ta.value.includes('<describe the spreadsheet you want');
+    pb.click();
+    const back = ta.value.includes('"format"') && !ta.value.includes('<describe');
+    return shown && back;
+  }));
+
+  // ── the schema the prompt asks for (cells with v/f) MUST apply and COMPUTE ──
+  check('a schema-shaped sheet (cells with v/f) applies and formulas recompute', await page.evaluate(() => {
+    const env = JSON.stringify({ format: 'localoffice/v1', type: 'sheet', meta: { title: 'Gen' }, body: { sheets: [
+      { name: 'S1', cells: { 'A1': { v: 'Item' }, 'B1': { v: 'Amt' }, 'B2': { v: 10 }, 'B3': { v: 20 }, 'B4': { f: '=SUM(B2:B3)' }, 'B5': { f: '=B4*1.1' } } } ] } });
+    applyOpenedSheet(env, null);
+    const S = window.LocalSheets.Store;
+    return S.data.meta.title === 'Gen' && S.getCell('B4').value === 30 && Math.abs(S.getCell('B5').value - 33) < 1e-9;
+  }));
+
+  // ── in-app "New sheet" mode: generate a workbook via local Ollama (mocked) → preview → apply ──
+  check('AI New-sheet mode drafts a spreadsheet and applies it (formulas compute)', await page.evaluate(async () => {
+    window.fetch = async (url) => {
+      url = String(url);
+      if (url.endsWith('/api/tags')) return { ok: true, json: async () => ({ models: [{ name: 'llama3.2' }] }) };
+      if (url.endsWith('/api/generate')) return { ok: true, json: async () => ({ response: JSON.stringify({ format: 'localoffice/v1', type: 'sheet', meta: { title: 'AI Sheet' }, body: { sheets: [
+        { name: 'S1', cells: { 'A1': { v: 'X' }, 'B1': { v: 5 }, 'B2': { f: '=B1*2' } } } ] } }) }) };
+      return { ok: false, status: 404 };
+    };
+    await AI.detect();
+    document.querySelector('input[name="ai-mode"][value="sheet"]').checked = true;
+    document.getElementById('ai-model').innerHTML = '<option>llama3.2</option>'; document.getElementById('ai-model').value = 'llama3.2';
+    document.getElementById('ai-prompt').value = 'a tiny sheet';
+    await AI.send();
+    const previewShown = !document.getElementById('ai-apply-sheet').classList.contains('hidden') && /AI Sheet/.test(document.getElementById('ai-response').textContent);
+    AI.applyGenSheet();
+    const S = window.LocalSheets.Store;
+    return previewShown && S.data.meta.title === 'AI Sheet' && S.getCell('B2').value === 10;
+  }));
+
+  check('Embeds host: + Add embeds an object (LocalRender preview); round-trip preserves body.embeds', await page.evaluate(() => {
+    EmbedHost.open();
+    const sel = document.querySelector('#eh [data-a="add"]'); if (!sel) return false;
+    sel.value = 'runbook'; sel.dispatchEvent(new Event('change'));
+    const added = Array.isArray(Store.data.embeds) && Store.data.embeds.length === 1 && Store.data.embeds[0].envelope.type === 'runbook';
+    const noDrawerIframe = !document.querySelector('#eh iframe');
+    const prev = document.querySelector('#eh .eh-prev'); const previewShown = !!prev && prev.innerHTML.length > 0;
+    const text = Store.toJSON(); const env = JSON.parse(text);
+    const inBody = env.body.embeds && env.body.embeds.length === 1 && env.body.embeds[0].envelope.type === 'runbook';
+    Store.loadJSON(text);
+    const afterLoad = Array.isArray(Store.data.embeds) && Store.data.embeds.length === 1 && Store.data.embeds[0].envelope.type === 'runbook';
+    const hasBtn = [...document.querySelectorAll('button')].some(b => b.textContent.indexOf('Embeds') >= 0);
+    return added && noDrawerIframe && previewShown && inBody && afterLoad && hasBtn;
+  }));
+
+  check('Save flushes an in-progress cell edit (last typed value is not lost)', await page.evaluate(async () => {
+    Selection.set(0, 0, false);
+    const td = Grid.cellEl(0, 0); if (!td) return false;
+    // simulate: the user is mid-typing in A1 and has NOT pressed Enter / clicked away
+    editing = true; editPrev = '';
+    const inp = document.createElement('input'); inp.className = 'editor'; inp.value = '424242'; td.appendChild(inp);
+    let written = '';
+    Store.handle = { createWritable: async () => ({ write: async (t) => { written = t; }, close: async () => {} }) };
+    await saveWorkbook();
+    return editing === false && written.indexOf('424242') >= 0;
+  }));
+  check('New also flushes an in-progress edit before it can be lost', await page.evaluate(() => {
+    Selection.set(1, 0, false);
+    const td = Grid.cellEl(1, 0); if (!td) return false;
+    editing = true; editPrev = '';
+    const inp = document.createElement('input'); inp.className = 'editor'; inp.value = '778899'; td.appendChild(inp);
+    commitEdit();   // the exact call newWorkbook/save now make first
+    return editing === false && Store.toJSON().indexOf('778899') >= 0;
+  }));
+
   console.log(`\n\n${pass} passed, ${fail} failed`);
   if (fails.length) { console.log('Failures:'); fails.forEach(f => console.log('  ✗ ' + f)); }
   await browser.close();

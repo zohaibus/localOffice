@@ -173,7 +173,7 @@ closed and nothing touches the network.
 ```
 localDoc/
 ├── index.html     # The entire application (inlines the core + coverage kernel)
-├── verify-doc.js  # Headless (Playwright) verification (82 checks)
+├── verify-doc.js  # Headless (Playwright) verification (104 checks)
 └── README.md      # This file
 ```
 

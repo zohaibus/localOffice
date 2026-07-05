@@ -25,6 +25,8 @@ src/core.js              Shared loader/saver, the foundation every tool builds o
 src/test-core.js         Node unit tests for the core (no dependencies).
 src/verify.js            Shared verification kernel (deterministic exact + coverage + tolerance).
 src/test-verify.js       Node unit tests for the verify kernel.
+src/render.js            Shared static renderer (LocalRender): any object → HTML/SVG for embeds + export.
+src/test-render.js       Node unit tests for the render module.
 core-harness.html        Browser dev harness for the IO paths Node can't test.
 run-all-tests.js         Runs every suite across the whole project.
 fs-mock.js               In-memory File System Access API mock for headless save/open tests.
@@ -41,6 +43,25 @@ localCheck/              QA runbook (body type: runbook). Kernel-gated sign-off 
 localDoc/                Block doc writer (body type: doc). Coverage compliance linter plus headless tests.
 templates/               localoffice/v1 sheet and plan presets (unit pack, net-worth, PM plan).
 ```
+
+## Shared capabilities (across the tools)
+
+- **LLM authoring — `✦ Prompt`.** Every tool's JSON panel has a `✦ Prompt` toggle
+  showing a copy-ready prompt to build that document with *any* LLM (local, on-prem,
+  or cloud); paste the returned JSON back and Apply. The AI-panel tools also have a
+  one-click **Generate** via a local Ollama. The deterministic kernel always decides
+  correctness — the model only proposes.
+- **Embedded objects.** A tool can embed another tool's object as a live, editable
+  child — a sheet's table or a mind map on a deck slide, an object inline in a doc,
+  or attached via each tool's `◲ Embeds` drawer. Objects are stored as a nested
+  `localoffice/v1` envelope (they round-trip on save/load) and drawn by the shared
+  static renderer `src/render.js` (`LocalRender`), so they render the same in the
+  editor **and** in exports, fully offline. You edit by opening the real tool.
+- **Mind-map diagramming.** Node shapes (rounded, rectangle, circle, diamond,
+  triangle, logic gates), a full colour palette (named + custom hex), and
+  connections you can click to **label / style** (line, arrow, double-arrow, dashed)
+  or **drag to re-connect**. Delete is Visio-style: node-only (re-parenting its
+  children), with **Shift+Del** to delete the whole branch.
 
 ## The Hub (`LocalOffice.html`)
 
@@ -100,7 +121,9 @@ not a freeform canvas. Single file, no deps, offline. Reads/writes
 `localoffice/v1` (`type: "slides"`).
 
 - **Layouts:** Title, Title+Bullets, Two columns, Section, Quote, Image,
-  Image+caption, Text+image, Code, Blank.
+  Image+caption, Text+image, Code, Table, **Embedded object**, Blank. The embedded-
+  object layout puts another tool's object on the slide (a sheet table, a mind map,
+  …), drawn by `LocalRender` and editable in a modal; **A− / A+** scale it.
 - **Pictures:** insert by file picker, **drag-and-drop, or paste** (Ctrl/Cmd-V).
   Every image is **re-encoded through a `<canvas>`**, which strips all source
   metadata (EXIF/GPS/camera/author) and downscales it (longest side 1600px), so
@@ -125,7 +148,7 @@ not a freeform canvas. Single file, no deps, offline. Reads/writes
   the system setting until you choose, then persists). This is separate from the
   deck's own theme presets (midnight/slate/paper/warm), which style the slides.
 
-Verify headlessly: `node localDeck/verify-deck.js` (98 checks, headless Chromium
+Verify headlessly: `node localDeck/verify-deck.js` (138 checks, headless Chromium
 via Playwright). The AI path runs against a mocked Ollama stream, so it works with
 or without Ollama installed. The PDF print dialog, a live Ollama, and the
 Firefox/Safari download fallback are the only paths that need a manual click.
@@ -149,7 +172,7 @@ offline. Reads/writes `localoffice/v1`.
 - **Theming:** app light/dark mode plus per-card visual themes, with overlays
   that stay legible in every combination.
 
-Verify headlessly: `node localCards/verify-cards.js` (100 checks).
+Verify headlessly: `node localCards/verify-cards.js` (104 checks).
 
 ## LocalSheets (`localSheets/`)
 
@@ -170,7 +193,7 @@ Refactored onto the shared envelope. See
 
 Verify headlessly: `node localSheets/src/test-engine.js` (143),
 `test-store.js` (58), `test-envelope.js` (23), and
-`node localSheets/verify-localsheets.js` (46).
+`node localSheets/verify-localsheets.js` (52).
 
 ## LocalPlan (`localPlan/`)
 
@@ -187,7 +210,7 @@ model, not a task or Gantt list. Vanilla JS, no deps, offline. See
   and **Suggest priorities**. Advisory, validated, never auto-applied.
 - Envelope save/open, zoom, light/dark. Opens in the Hub with in-place save.
 
-Verify headlessly: `node localPlan/verify-plan.js` (51 checks, including
+Verify headlessly: `node localPlan/verify-plan.js` (55 checks, including
 mocked-Ollama AI and a mocked-FS round-trip).
 
 ## localMindMap (`localMindMap/`)
@@ -237,7 +260,7 @@ Reads/writes `localoffice/v1` (`type: "mindmap"`).
   *local* Ollama at `localhost:11434` (off by default) and never changes the map
   without your approval.
 
-Verify headlessly: `node localMindMap/verify-mindmap.js` (88 checks, including
+Verify headlessly: `node localMindMap/verify-mindmap.js` (122 checks, including
 mocked-Ollama AI, color/image/touch, tidy-layout/snap/templates, tidy plus undo,
 the Hub embed handshake, and a mocked-FS save and open round-trip).
 
@@ -300,7 +323,7 @@ turned into a product. Single file, no deps, offline.
   light/dark, opens in the Hub with in-place save.
 
 This is where the kernel gained **`tolerance`** (still deterministic, see
-`src/verify.js`). Verify headlessly: `node localCheck/verify-check.js` (36
+`src/verify.js`). Verify headlessly: `node localCheck/verify-check.js` (42
 checks), including the headline that out-of-bounds blocks sign-off and in-bounds
 allows it, plus the sign, reopen, tamper-detected seal path, the fail-to-diagnostic
 branch, and the Web Serial parse logic.
@@ -324,7 +347,7 @@ and technical proposals, *not* a Word clone. Single file, no deps, offline.
   prose; **the compliance verdict stays the kernel's**, never the AI's.
 - Export Markdown when compliant. Save/Open envelope, light/dark, Hub embed.
 
-Verify headlessly: `node localDoc/verify-doc.js` (82 checks), including the
+Verify headlessly: `node localDoc/verify-doc.js` (104 checks), including the
 headline that export is blocked until mandatory keywords are present, the
 keyword-matching truth-table, the malformed-rule fail-closed class, WYSIWYG round-
 trip fidelity, and a mocked-Ollama distill.
@@ -357,11 +380,14 @@ numbers describe a *power class*, not a brand.
 
 Measured there with [`verify-perf.js`](verify-perf.js) (`node verify-perf.js`):
 
-- **~850 KB for the entire 9-file suite, 0 dependencies, 0 build step.** No
-  framework, no DOM-diffing runtime, no bundler. The source *is* the app.
-- **Cold start (parse to interactive) of about 20 to 300 ms** for eight of the
+- **~1,090 KB (≈1.06 MB) for the entire 9-file suite, 0 dependencies, 0 build
+  step.** No framework, no DOM-diffing runtime, no bundler. The source *is* the
+  app. (The shared modules — core, verify kernel, and the `LocalRender` renderer —
+  are *inlined* into each tool rather than loaded, which keeps every file
+  standalone at the cost of some duplication.)
+- **Cold start (parse to interactive) of about 20 to 330 ms** for eight of the
   nine tools on that CPU; the spreadsheet/formula engine, the heavy one, takes
-  about 0.8 s. Roughly **10 MB JS heap** per tool (browser-reported, coarse).
+  about 0.6 s. Roughly **10 MB JS heap** per tool (browser-reported, coarse).
 - **No idle work:** zero background polling, zero cloud sync, zero telemetry, zero
   DNS lookups. The only interval timers in the whole suite are sub-second
   AI-progress counters that exist only while a request **you** started is in
@@ -409,8 +435,8 @@ node run-all-tests.js
 ```
 
 It executes all suites as child processes and passes only if every suite passes
-(exit code plus the parsed `N passed, M failed`). Current state: **913 passed, 0
-failed** across 16 suites. The browser suites need Playwright (dev tooling only):
+(exit code plus the parsed `N passed, M failed`). Current state: **1098 passed, 0
+failed** across 17 suites. The browser suites need Playwright (dev tooling only):
 install it once with `npm i -D playwright && npx playwright install chromium`, or
 point `PLAYWRIGHT_DIR` at an existing install. Every tool's File System Access path (`showSaveFilePicker`
 to `createWritable`/`write`/`close` to `showOpenFilePicker` to `getFile`) is
