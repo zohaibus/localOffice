@@ -189,8 +189,10 @@
   .t-embed { display: flex; align-items: center; justify-content: center; font-size: 5cqw; position: relative; }
   .embedrender { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .embedrender > * { max-width: 100%; max-height: 100%; overflow: auto; }
-  .t-embed .embedph { font-size: .34em; opacity: .6; border: 1px dashed currentColor; border-radius: 1cqw; padding: 1.4cqw 2cqw; }
-  .t-embed .embedhint { position: absolute; right: .8cqw; bottom: .6cqw; font-size: 1.2cqw; opacity: .4; pointer-events: none; }
+  .t-embed .embedph { font-size: .34em; opacity: .6; border: 1px dashed currentColor; border-radius: 1cqw; padding: 1.4cqw 2cqw; display: none; }
+  /* the empty-picker hint and the "double-click to edit" hint are EDITOR-ONLY (never in present or export) */
+  #preview .t-embed .embedph { display: block; }
+  #preview .t-embed:has(.embedrender)::after { content: 'double-click to edit'; position: absolute; right: .8cqw; bottom: .5cqw; font-size: 1.2cqw; opacity: .4; pointer-events: none; }
   /* live editor modal */
   #embed-editor { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; padding: 22px; }
   #embed-editor.on { display: flex; }
@@ -667,8 +669,8 @@ function blockHTML(b, t, opts) {
     const env = b.embed && b.embed.envelope;
     const scale = (b.embed && b.embed.scale) || 1;   // A- / A+ font scaling for the embedded object
     let inner;
-    if (!env || !env.type) inner = forExport ? '' : '<div class="embedph">◲ Empty — pick an object to embed in the inspector →</div>';
-    else { inner = embedSnapshot(env, forExport); if (!forExport) inner += '<div class="embedhint">double-click to edit</div>'; }
+    if (!env || !env.type) inner = forExport ? '' : '<div class="embedph">◲ Empty - pick an object to embed in the inspector</div>';
+    else inner = embedSnapshot(env, forExport);   // the "double-click to edit" hint is editor-only (CSS on #preview), never in present/export
     return `<div class="block t-embed" style="${pos}overflow:hidden;padding:0;font-size:${(5 * scale).toFixed(2)}cqw;">${inner}</div>`;
   }
 
@@ -707,7 +709,7 @@ function slideInnerHTML(s, t, opts) {
   return html;
 }
 
-// ── shared static renderer (inlined from src/render.js) — turns any embedded
+// ── shared static renderer (inlined from src/render.js) - turns any embedded
 //    object's body into self-contained HTML/SVG for the slide view AND export. ──
 (function (factory) {
   const mod = factory();
@@ -793,7 +795,7 @@ function slideInnerHTML(s, t, opts) {
   function runbook(body, opts) { const steps = (body.steps || []).slice(0, (opts && opts.maxRows) || 16); if (!steps.length) return card({ type: 'runbook', body: body }); let html = '<ul class="lo-r-list" style="list-style:none;margin:0;padding:0;font-size:.58em;line-height:1.5;text-align:left">'; steps.forEach(s => { const mark = s.kind === 'note' ? '•' : ((s.done || (s.result && s.result.pass)) ? '☑' : '☐'); html += '<li style="display:flex;gap:.5em"><span>' + mark + '</span><span>' + esc(s.text || '') + '</span></li>'; }); return html + '</ul>'; }
   function doc(body, opts) { const blocks = (body.blocks || []).slice(0, (opts && opts.maxRows) || 12); if (!blocks.length) return card({ type: 'doc', body: body }); let html = '<div class="lo-r-doc" style="font-size:.55em;line-height:1.4;text-align:left">'; blocks.forEach(b => { if (b.heading) html += '<div style="font-weight:700;margin:.4em 0 .12em">' + esc(b.heading) + '</div>'; if (b.text) html += '<div style="opacity:.85">' + esc(String(b.text).replace(/[#>*`_]/g, '').slice(0, 220)) + '</div>'; }); return html + '</div>'; }
   function plan(body, opts) { const tracks = (body.tracks || []).slice(0, (opts && opts.maxRows) || 6); if (!tracks.length) return card({ type: 'plan', body: body }); let html = '<div class="lo-r-plan" style="font-size:.55em;line-height:1.4;text-align:left">'; tracks.forEach(t => { html += '<div style="font-weight:700;margin-top:.3em">' + esc(t.title || '') + '</div>'; (t.sections || []).slice(0, 3).forEach(sec => { const items = (sec.items || []).slice(0, 4).map(i => esc(i.text || '')).filter(Boolean).join(', '); html += '<div style="opacity:.8">' + esc(sec.name || '') + (items ? ': ' + items : '') + '</div>'; }); }); return html + '</div>'; }
-  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> — ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
+  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> - ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
   function slides(body, opts) { const ss = body.slides || []; if (!ss.length) return card({ type: 'slides', body: body }); let html = '<div class="lo-r-slides" style="font-size:.55em;line-height:1.5;text-align:left">'; ss.slice(0, (opts && opts.maxRows) || 10).forEach((s, i) => { const tb = (s.blocks || []).find(b => b.role === 'title' || b.type === 'text'); const t = (tb && tb.content) || ('Slide ' + (i + 1)); html += '<div>' + (i + 1) + '. ' + esc(t) + '</div>'; }); return html + '</div>'; }
   function render(env, opts) { env = env || {}; const body = env.body || {}; switch (env.type) { case 'sheet': return sheet(body, opts); case 'mindmap': return mindmap(body, opts); case 'runbook': return runbook(body, opts); case 'doc': return doc(body, opts); case 'plan': return plan(body, opts); case 'flashcards': return flashcards(body, opts); case 'slides': return slides(body, opts); default: return card(env); } }
   return { render, card, summary, titleOf, mindmapSVG, LABELS };
@@ -940,7 +942,7 @@ function renderInspector() {
             <option value="plan">Plan</option><option value="slides">Slides</option><option value="doc">Document</option>
           </select><div class="hint">Pick a tool; it embeds as a live, editable object shown on the slide.</div>`;
       } else {
-        html += `<div class="hint">◲ ${esc(EMBED_LABELS[ty] || ty)} — “${esc((env.meta && env.meta.title) || '')}” · ${esc(embedSummary(env))}</div>
+        html += `<div class="hint">◲ ${esc(EMBED_LABELS[ty] || ty)} - “${esc((env.meta && env.meta.title) || '')}” · ${esc(embedSummary(env))}</div>
           <div class="row2"><button id="emb-edit">Edit ◲ ${esc(EMBED_LABELS[ty] || ty)}</button><button id="emb-remove" class="ghost">Remove object</button></div>
           <div class="row2"><label>Font size</label><button id="emb-smaller" title="Smaller">A−</button><button id="emb-bigger" title="Larger">A+</button></div>
           <div class="hint">Tip: double-click the object on the slide to edit it.</div>`;
@@ -1752,8 +1754,8 @@ Rules:
 - Do NOT use image layouts (you cannot produce images).
 - Start with a "title" slide; keep bullets short.
 
-Embedding an object (use when a slide is best shown as another tool's object — a real data
-table, a diagram, or a finite-state machine — instead of plain bullets):
+Embedding an object (use when a slide is best shown as another tool's object - a real data
+table, a diagram, or a finite-state machine - instead of plain bullets):
 - Use layout "embed". Its "embed" block carries a nested localoffice/v1 envelope:
   { "role": "embed", "type": "embed",
     "embed": { "envelope": {
@@ -1827,7 +1829,7 @@ const EmbedHost = (function () {
   function removeEmbed(id) { if (curEdit && curEdit.id === id) closeEditor(); write(read().filter(e => e.id !== id)); render(); }
   function render() {
     const list = read(); listEl.innerHTML = '';
-    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool \u2014 it is drawn here and saved inside this file.</p>'; return; }
+    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool - it is drawn here and saved inside this file.</p>'; return; }
     list.forEach(item => {
       const env = item.envelope || {}; const type = env.type; const tool = TOOLS[type];
       const title = (env.meta && env.meta.title) || (tool ? tool.label : type) || 'object';

@@ -48,6 +48,7 @@ const TOOLS = [
   { name: 'localMark', file: 'localMark/index.html' },
   { name: 'localCheck', file: 'localCheck/index.html' },
   { name: 'localDoc', file: 'localDoc/index.html' },
+  { name: 'localValidate', file: 'localValidate/index.html' },
 ];
 
 function staticScan(file) {

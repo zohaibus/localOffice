@@ -43,7 +43,7 @@ check('runbook renders a checklist', has(R.render({ type: 'runbook', body: { ste
 check('runbook shows pending as an empty box', has(R.render({ type: 'runbook', body: { steps: [{ id: '2', kind: 'check', text: 'x', done: false }] } }), '☐'));
 check('doc renders headings + text', has(R.render({ type: 'doc', body: { blocks: [{ heading: 'Cause', text: 'the root cause' }] } }), 'Cause'));
 check('plan renders tracks + sections', has(R.render({ type: 'plan', body: { tracks: [{ title: 'Work', sections: [{ name: 'Now', items: [{ text: 'ship' }] }] }] } }), 'Work') );
-check('flashcards render front — back', has(R.render({ type: 'flashcards', body: { cards: [{ front: 'Q', back: 'A' }] } }), 'Q'));
+check('flashcards render front - back', has(R.render({ type: 'flashcards', body: { cards: [{ front: 'Q', back: 'A' }] } }), 'Q'));
 check('slides render a title list', has(R.render({ type: 'slides', body: { slides: [{ blocks: [{ role: 'title', content: 'Hello' }] }] } }), 'Hello'));
 check('unknown type -> labelled card, never throws', has(R.render({ type: 'wat', body: {} }), '◲'));
 check('null/empty envelope does not throw', typeof R.render(null) === 'string' && typeof R.render({}) === 'string');

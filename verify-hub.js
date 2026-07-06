@@ -100,6 +100,30 @@ function env(type, title, tags, modified) {
   // ── viewer scaffolding present (the iframe handoff target) ──
   check('viewer overlay + iframe exist', await page.evaluate(() => !!document.getElementById('vframe') && !!document.getElementById('viewer')));
 
+  // ── localValidate: the Hub's spec-conformance utility (no body type of its own) ──
+  check('VALIDATE_TOOL points at localValidate', await page.evaluate(() =>
+    Hub.VALIDATE_TOOL && Hub.VALIDATE_TOOL.file === 'localValidate/index.html' && Hub.VALIDATE_TOOL.name === 'localValidate'));
+  check('every file card offers a Validate action', await page.evaluate(() => {
+    Hub._loadForTest([{ name: 'a', text: JSON.stringify({ format: 'localoffice/v1', type: 'plan', meta: { id: 'x', title: 'P' }, body: {} }) }]);
+    return document.querySelectorAll('#grid .card .val').length === 1;
+  }));
+  check('openValidate(entry) opens localValidate with the file to check (handoff armed)', await page.evaluate(() => {
+    Hub.openValidate({ type: 'plan', title: 'P', text: 'TXT', name: 'p.localoffice.json' });
+    return document.getElementById('viewer').classList.contains('on') &&
+      /localValidate\/index\.html$/.test(document.getElementById('vframe').getAttribute('src')) &&
+      Hub.hasOpenable() === true;
+  }));
+  check('openValidate(null) launches localValidate blank (no file handoff)', await page.evaluate(() => {
+    Hub.openValidate(null);
+    return Hub.hasOpenable() === false && /localValidate\/index\.html$/.test(document.getElementById('vframe').getAttribute('src'));
+  }));
+  check('the header Validate button launches the utility', await page.evaluate(() => {
+    document.getElementById('viewer').classList.remove('on');
+    document.getElementById('btn-validate').click();
+    return document.getElementById('viewer').classList.contains('on') && /localValidate\//.test(document.getElementById('vframe').getAttribute('src'));
+  }));
+  await page.evaluate(() => { Hub._setPendingForTest(null); document.getElementById('vframe').src = 'about:blank'; document.getElementById('viewer').classList.remove('on'); });
+
   // ── Open workspace folder: fall back to Files… when the directory picker is blocked (e.g. file://) ──
   check('Open workspace folder falls back to Files… on a blocked picker, but not on cancel', await page.evaluate(async () => {
     const fi = document.getElementById('file-input'); const orig = fi.click; let clicks = 0; fi.click = () => { clicks++; };

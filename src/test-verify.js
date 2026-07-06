@@ -54,7 +54,7 @@ test('coverage: case-insensitive by default', () => {
   eq(V.coverage('The CELL', { required: ['cell'] }).pass, true);
 });
 test('coverage: default substring matching (unchanged for flashcards)', () => {
-  // "dispatched" contains "patch" — a substring hit. This is the legacy behavior
+  // "dispatched" contains "patch" - a substring hit. This is the legacy behavior
   // flashcards rely on; it must stay the default.
   eq(V.coverage('dispatched', { required: ['patch'] }).pass, true);
 });

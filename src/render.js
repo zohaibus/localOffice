@@ -138,7 +138,7 @@
     const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10);
     if (!cs.length) return card({ type: 'flashcards', body: body });
     let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">';
-    cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> — ' + esc(c.back || '') + '</div>'; });
+    cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> - ' + esc(c.back || '') + '</div>'; });
     return html + '</div>';
   }
   function slides(body, opts) {

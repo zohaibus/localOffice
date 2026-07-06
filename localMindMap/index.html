@@ -377,7 +377,7 @@
   <div id="edge-bar" class="hidden">
     <span class="eb-lab">Link</span>
     <input id="edge-label" placeholder="label (optional)" title="Link label">
-    <button data-es="line" title="Plain line" onclick="setEdgeStyle('line')">—</button>
+    <button data-es="line" title="Plain line" onclick="setEdgeStyle('line')">─</button>
     <button data-es="arrow" title="Arrow" onclick="setEdgeStyle('arrow')">→</button>
     <button data-es="arrow2" title="Double arrow" onclick="setEdgeStyle('arrow2')">↔</button>
     <button data-es="dashed" title="Dashed" onclick="setEdgeStyle('dashed')">┈</button>
@@ -1607,7 +1607,7 @@ const JsonPanel = (function () {
 })();
 JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: (t) => applyOpenedMind(LocalOffice.parse(t, { coerce: raw => (raw && Array.isArray(raw.nodes)) ? LocalOffice.createEnvelope('mindmap', { title: raw.title || '', app: APP, body: raw }) : null }).envelope, fileHandle) });
 
-// ── shared static renderer (inlined from src/render.js) — draws any embedded object's body. ──
+// ── shared static renderer (inlined from src/render.js) - draws any embedded object's body. ──
 (function (factory) {
   const mod = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
@@ -1692,7 +1692,7 @@ JsonPanel.init({ getText: () => LocalOffice.stringify(exportData()), applyText: 
   function runbook(body, opts) { const steps = (body.steps || []).slice(0, (opts && opts.maxRows) || 16); if (!steps.length) return card({ type: 'runbook', body: body }); let html = '<ul class="lo-r-list" style="list-style:none;margin:0;padding:0;font-size:.58em;line-height:1.5;text-align:left">'; steps.forEach(s => { const mark = s.kind === 'note' ? '\u2022' : ((s.done || (s.result && s.result.pass)) ? '\u2611' : '\u2610'); html += '<li style="display:flex;gap:.5em"><span>' + mark + '</span><span>' + esc(s.text || '') + '</span></li>'; }); return html + '</ul>'; }
   function doc(body, opts) { const blocks = (body.blocks || []).slice(0, (opts && opts.maxRows) || 12); if (!blocks.length) return card({ type: 'doc', body: body }); let html = '<div class="lo-r-doc" style="font-size:.55em;line-height:1.4;text-align:left">'; blocks.forEach(b => { if (b.heading) html += '<div style="font-weight:700;margin:.4em 0 .12em">' + esc(b.heading) + '</div>'; if (b.text) html += '<div style="opacity:.85">' + esc(String(b.text).replace(/[#>*`_]/g, '').slice(0, 220)) + '</div>'; }); return html + '</div>'; }
   function plan(body, opts) { const tracks = (body.tracks || []).slice(0, (opts && opts.maxRows) || 6); if (!tracks.length) return card({ type: 'plan', body: body }); let html = '<div class="lo-r-plan" style="font-size:.55em;line-height:1.4;text-align:left">'; tracks.forEach(t => { html += '<div style="font-weight:700;margin-top:.3em">' + esc(t.title || '') + '</div>'; (t.sections || []).slice(0, 3).forEach(sec => { const items = (sec.items || []).slice(0, 4).map(i => esc(i.text || '')).filter(Boolean).join(', '); html += '<div style="opacity:.8">' + esc(sec.name || '') + (items ? ': ' + items : '') + '</div>'; }); }); return html + '</div>'; }
-  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> \u2014 ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
+  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> - ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
   function slides(body, opts) { const ss = body.slides || []; if (!ss.length) return card({ type: 'slides', body: body }); let html = '<div class="lo-r-slides" style="font-size:.55em;line-height:1.5;text-align:left">'; ss.slice(0, (opts && opts.maxRows) || 10).forEach((s, i) => { const tb = (s.blocks || []).find(b => b.role === 'title' || b.type === 'text'); const t = (tb && tb.content) || ('Slide ' + (i + 1)); html += '<div>' + (i + 1) + '. ' + esc(t) + '</div>'; }); return html + '</div>'; }
   function render(env, opts) { env = env || {}; const body = env.body || {}; switch (env.type) { case 'sheet': return sheet(body, opts); case 'mindmap': return mindmap(body, opts); case 'runbook': return runbook(body, opts); case 'doc': return doc(body, opts); case 'plan': return plan(body, opts); case 'flashcards': return flashcards(body, opts); case 'slides': return slides(body, opts); default: return card(env); } }
   return { render, card, summary, titleOf, mindmapSVG, LABELS };
@@ -1750,7 +1750,7 @@ const EmbedHost = (function () {
   function removeEmbed(id) { if (curEdit && curEdit.id === id) closeEditor(); write(read().filter(e => e.id !== id)); render(); }
   function render() {
     const list = read(); listEl.innerHTML = '';
-    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool \u2014 it is drawn here and saved inside this file.</p>'; return; }
+    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool - it is drawn here and saved inside this file.</p>'; return; }
     list.forEach(item => {
       const env = item.envelope || {}; const type = env.type; const tool = TOOLS[type];
       const title = (env.meta && env.meta.title) || (tool ? tool.label : type) || 'object';

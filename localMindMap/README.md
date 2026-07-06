@@ -10,9 +10,9 @@
 No accounts. No cloud. No build step. No tracking. One HTML file.
 
 <p align="center">
-  <a href="https://zohaibus.github.io/localOffice/localMindMap/index.html"><img src="https://github.com/user-attachments/assets/b2d42bfd-ea91-4d82-839a-8ad518aa9230" alt="localMindMap demo (animated)" width="820"></a>
+  <a href="https://localoffice.dev/localMindMap/index.html"><img src="https://github.com/user-attachments/assets/b2d42bfd-ea91-4d82-839a-8ad518aa9230" alt="localMindMap demo (animated)" width="820"></a>
 </p>
-<p align="center"><a href="https://zohaibus.github.io/localOffice/localMindMap/index.html"><b>▶ Open localMindMap</b></a></p>
+<p align="center"><a href="https://localoffice.dev/localMindMap/index.html"><b>▶ Open localMindMap</b></a></p>
 
 ---
 
@@ -46,7 +46,7 @@ children drop in at a sensible offset, and where they end up is up to you.
 - Optional **cross-links**: labeled connections between any two nodes (the `edges`
   array). Select a node, click **Link**, click the target, type a label.
 - **Editable connections:** click any connection (tree link *or* cross-link) to
-  **label** it and set a **style** — line, arrow, double-arrow, or dashed — or
+  **label** it and set a **style** (line, arrow, double-arrow, or dashed), or
   **drag its endpoint** onto another node to re-connect (re-parents a tree link).
 - **Shapes & colours:** per-node shape (rounded, rectangle, circle, diamond,
   triangle, logic gates) and a full colour palette (named swatches + custom hex).

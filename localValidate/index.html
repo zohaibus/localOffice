@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="localValidate - check any localoffice/v1 file against the spec. Single file, offline, no dependencies.">
+<title>localValidate - localoffice/v1 conformance checker</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --surface: #ffffff; --ink: #1c2026; --ink-2: #5a6270; --border: rgba(0,0,0,.12);
+    --border-strong: rgba(0,0,0,.2); --accent: #3b6ef6; --ok: #2f7d3a; --bad: #cd2b31; --warn: #b8860b;
+    --ok-bg: #e7f3e1; --bad-bg: #fbe8e6; --warn-bg: #f9f0d8; --mono: ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d; --surface: #1f2228; --ink: #e7e9ee; --ink-2: #9aa3b2; --border: rgba(255,255,255,.12);
+      --border-strong: rgba(255,255,255,.2); --accent: #5b8cff; --ok: #7cc47f; --bad: #ef8a8e; --warn: #e0b64f;
+      --ok-bg: #243a26; --bad-bg: #432826; --warn-bg: #3b3320;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--ink); background: var(--bg); display: flex; flex-direction: column; }
+  header { padding: 16px 22px 12px; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0; font-size: 20px; letter-spacing: -.01em; }
+  header p { margin: 4px 0 0; color: var(--ink-2); font-size: 13px; }
+  header .no-net { color: var(--ok); }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: 0; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  .pane { display: flex; flex-direction: column; min-height: 0; }
+  .pane.left { border-right: 1px solid var(--border); }
+  .toolbar { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .toolbar .grow { flex: 1; }
+  button { font: inherit; font-size: 13px; padding: 7px 13px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:hover { filter: brightness(.97); }
+  textarea { flex: 1; width: 100%; border: 0; outline: none; resize: none; padding: 14px 16px; background: var(--surface); color: var(--ink); font: 12.5px/1.55 var(--mono); white-space: pre; overflow: auto; }
+  .pane.left.drag { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  .results { flex: 1; overflow: auto; padding: 14px 16px; background: var(--surface); }
+  .verdict { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 9px; font-weight: 700; margin-bottom: 14px; }
+  .verdict.pass { background: var(--ok-bg); color: var(--ok); }
+  .verdict.fail { background: var(--bad-bg); color: var(--bad); }
+  .verdict.warn { background: var(--warn-bg); color: var(--warn); }
+  .verdict .big { font-size: 16px; }
+  .grp { margin: 0 0 6px; font-size: 12px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
+  .rule { display: flex; gap: 9px; align-items: flex-start; padding: 5px 0; border-top: 1px solid var(--border); }
+  .rule:first-of-type { border-top: 0; }
+  .rule .mark { flex: 0 0 auto; width: 18px; text-align: center; font-weight: 700; }
+  .rule.pass .mark { color: var(--ok); } .rule.fail .mark { color: var(--bad); } .rule.warn .mark { color: var(--warn); } .rule.info .mark { color: var(--ink-2); }
+  .rule .body { flex: 1; }
+  .rule .label { }
+  .rule .detail { color: var(--ink-2); font-size: 12.5px; margin-top: 1px; }
+  .rule .detail code { font-family: var(--mono); font-size: 12px; background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+  .empty { color: var(--ink-2); }
+  footer { padding: 9px 22px; border-top: 1px solid var(--border); color: var(--ink-2); font-size: 12px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>localValidate</h1>
+  <p>Check any <b>localoffice/v1</b> file against the <a href="SPEC.md">spec</a>. <span class="no-net">Runs fully offline - nothing leaves your machine.</span></p>
+</header>
+<main>
+  <div class="pane left">
+    <div class="toolbar">
+      <button class="primary" id="btn-validate">Validate</button>
+      <button id="btn-file">Load file…</button>
+      <button id="btn-example">Example</button>
+      <button id="btn-clear">Clear</button>
+      <input type="file" id="file-input" accept=".json,.localoffice.json,application/json,text/plain" style="display:none">
+      <span class="grow"></span>
+      <span class="empty" id="hint">load, drop, or paste a .localoffice.json</span>
+    </div>
+    <textarea id="input" spellcheck="false" placeholder='Load a file, drop one here, or paste a localoffice/v1 envelope, e.g.
+
+{
+  "format": "localoffice/v1",
+  "type": "doc",
+  "meta": { "id": "…", "title": "…", "created": "…", "modified": "…" },
+  "body": { … }
+}'></textarea>
+  </div>
+  <div class="pane right">
+    <div class="toolbar"><b>Conformance</b><span class="grow"></span><span class="empty" id="count"></span></div>
+    <div class="results" id="results"><p class="empty">Paste an envelope and press <b>Validate</b> (or just start typing).</p></div>
+  </div>
+</main>
+<footer>localValidate is part of the LocalOffice suite. Single file, no dependencies, offline. MIT.</footer>
+
+<script>
+'use strict';
+const REGISTERED = ['slides', 'flashcards', 'sheet', 'plan', 'mindmap', 'image', 'runbook', 'doc'];
+// meta keys the privacy invariant forbids (identifying metadata) - matched case-insensitively
+const FORBIDDEN_META = ['author', 'user', 'username', 'owner', 'machine', 'hostname', 'host', 'email', 'name', 'device', 'ip', 'account', 'creator'];
+
+const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isISO = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2})?/.test(s) && !isNaN(Date.parse(s));
+
+// Validate the top-level shape (Section 2) + meta (Section 3) of one envelope.
+// Returns an array of rule objects; `hard` marks a rule whose failure fails conformance.
+function checkEnvelope(obj, prefix) {
+  const R = [];
+  const add = (status, section, label, detail, hard) => R.push({ status, section, label, detail: detail || '', hard: !!hard, prefix: prefix || '' });
+
+  // ── Section 2: top-level shape ──
+  add(obj.format === 'localoffice/v1' ? 'pass' : 'fail', '2', 'format = "localoffice/v1"',
+    obj.format === 'localoffice/v1' ? '' : 'found: ' + JSON.stringify(obj.format), true);
+  const typeOk = typeof obj.type === 'string' && obj.type.length > 0;
+  add(typeOk ? 'pass' : 'fail', '2', 'type is a non-empty string (top level)',
+    typeOk ? 'type: "' + obj.type + '"' : 'found: ' + JSON.stringify(obj.type), true);
+  add(isObj(obj.meta) ? 'pass' : 'fail', '2', 'meta is an object', isObj(obj.meta) ? '' : 'meta missing or not an object', true);
+  add(isObj(obj.body) ? 'pass' : 'fail', '2', 'body is an object', isObj(obj.body) ? '' : 'body missing or not an object', true);
+
+  // ── Section 3: meta header ──
+  const m = isObj(obj.meta) ? obj.meta : {};
+  if (isObj(obj.meta)) {
+    add(typeof m.id === 'string' && m.id ? 'pass' : 'fail', '3', 'meta.id is a string', '', true);
+    add(typeof m.title === 'string' ? 'pass' : 'fail', '3', 'meta.title is a string', '', true);
+    add(isISO(m.created) ? 'pass' : 'fail', '3', 'meta.created is ISO-8601', isISO(m.created) ? '' : 'found: ' + JSON.stringify(m.created), true);
+    add(isISO(m.modified) ? 'pass' : 'fail', '3', 'meta.modified is ISO-8601', isISO(m.modified) ? '' : 'found: ' + JSON.stringify(m.modified), true);
+    if ('tags' in m) add(Array.isArray(m.tags) ? 'pass' : 'warn', '3', 'meta.tags is an array (optional)', Array.isArray(m.tags) ? '' : 'present but not an array');
+    if ('app' in m) add(typeof m.app === 'string' ? 'pass' : 'warn', '3', 'meta.app is a string (optional)', '');
+    // privacy invariant
+    const leaks = Object.keys(m).filter(k => FORBIDDEN_META.indexOf(k.toLowerCase()) !== -1);
+    add(leaks.length === 0 ? 'pass' : 'fail', '3', 'privacy: no identifying metadata in meta',
+      leaks.length ? 'forbidden field(s): ' + leaks.join(', ') : '', true);
+    // type must live at the top level, not in meta
+    if ('type' in m) add('warn', '3', 'type belongs at the top level, not in meta', 'meta.type is present (non-canonical)');
+  }
+
+  // ── Section 4: registered type ──
+  if (typeOk) {
+    const known = REGISTERED.indexOf(obj.type) !== -1;
+    add(known ? 'pass' : 'warn', '4', 'type is a registered v1 type',
+      known ? '' : '"' + obj.type + '" is unknown - a tool would degrade gracefully (Section 1)');
+  }
+  return R;
+}
+
+// find nested localoffice/v1 envelopes anywhere below the root (Section 5 embeds)
+function findEmbeds(node, depth, out, seen) {
+  if (depth > 8 || node === null || typeof node !== 'object' || seen.has(node)) return;
+  seen.add(node);
+  if (Array.isArray(node)) { node.forEach(v => findEmbeds(v, depth + 1, out, seen)); return; }
+  if (node.format === 'localoffice/v1' && depth > 0) out.push(node);
+  for (const k in node) findEmbeds(node[k], depth + 1, out, seen);
+}
+
+function validate(text) {
+  const out = { verdict: 'fail', rules: [] };
+  let obj;
+  try { obj = JSON.parse(text); }
+  catch (e) { out.rules.push({ status: 'fail', section: 'JSON', label: 'valid JSON', detail: String(e.message || e), hard: true }); return out; }
+  if (!isObj(obj)) { out.rules.push({ status: 'fail', section: 'JSON', label: 'a JSON object', detail: 'top level is not an object', hard: true }); return out; }
+
+  out.rules = checkEnvelope(obj, '');
+
+  // Section 5: validate nested embeds too
+  const embeds = []; findEmbeds(obj, 0, embeds, new Set());
+  if (embeds.length) {
+    out.rules.push({ status: 'info', section: '5', label: embeds.length + ' embedded object(s) found', detail: 'each is validated below' });
+    embeds.forEach((env, i) => {
+      const sub = checkEnvelope(env, 'embed ' + (i + 1) + ': ');
+      const subFail = sub.some(r => r.hard && r.status === 'fail');
+      out.rules.push({ status: subFail ? 'fail' : 'pass', section: '5', label: 'embed ' + (i + 1) + ' (' + (env.type || '?') + ')', detail: subFail ? 'invalid - see below' : 'valid', hard: true });
+      sub.forEach(r => { r.prefix = 'embed ' + (i + 1) + ': '; out.rules.push(r); });
+    });
+  }
+
+  // Section 7 + 9: not statically checkable from one document
+  out.rules.push({ status: 'info', section: '7', label: 'determinism boundary (Section 7)', detail: 'a property of the consuming tool - not checkable from a file' });
+  out.rules.push({ status: 'info', section: '9', label: 'unknown fields preserved on round-trip (Section 9)', detail: 'a property of the consuming tool - not checkable from a file' });
+
+  const anyFail = out.rules.some(r => r.hard && r.status === 'fail');
+  const anyWarn = out.rules.some(r => r.status === 'warn');
+  out.verdict = anyFail ? 'fail' : (anyWarn ? 'warn' : 'pass');
+  return out;
+}
+
+// ── UI ──
+const $ = id => document.getElementById(id);
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function mark(status) { return status === 'pass' ? '✓' : status === 'fail' ? '✗' : status === 'warn' ? '⚠' : '·'; }
+function render(res) {
+  const el = $('results');
+  const nFail = res.rules.filter(r => r.status === 'fail').length, nWarn = res.rules.filter(r => r.status === 'warn').length;
+  $('count').textContent = res.rules.length + ' rules';
+  let html = '<div class="verdict ' + res.verdict + '"><span class="big">' + (res.verdict === 'pass' ? '✓ Conforms' : res.verdict === 'warn' ? '⚠ Conforms with warnings' : '✗ Does not conform') + '</span>';
+  html += '<span>' + nFail + ' failed, ' + nWarn + ' warning(s)</span></div>';
+  let lastSec = null;
+  res.rules.forEach(r => {
+    if (r.section !== lastSec) { html += '<div class="grp">' + (r.section === 'JSON' ? 'JSON' : 'Section ' + r.section) + '</div>'; lastSec = r.section; }
+    html += '<div class="rule ' + r.status + '"><span class="mark">' + mark(r.status) + '</span><div class="body"><div class="label">' + esc((r.prefix || '') + r.label) + '</div>' + (r.detail ? '<div class="detail">' + esc(r.detail) + '</div>' : '') + '</div></div>';
+  });
+  el.innerHTML = html;
+}
+function run() {
+  const t = $('input').value.trim();
+  if (!t) { $('results').innerHTML = '<p class="empty">Paste an envelope and press <b>Validate</b>.</p>'; $('count').textContent = ''; return; }
+  render(validate(t));
+}
+$('btn-validate').addEventListener('click', run);
+$('btn-clear').addEventListener('click', () => { $('input').value = ''; run(); $('input').focus(); });
+// load a file (picker) or drop one onto the left pane - the common case is validating a real .localoffice.json
+function loadFile(file) {
+  if (!file) return;
+  const rd = new FileReader();
+  rd.onload = () => { $('input').value = String(rd.result || ''); $('hint').textContent = file.name; run(); };
+  rd.onerror = () => { $('hint').textContent = 'could not read that file'; };
+  rd.readAsText(file);
+}
+$('btn-file').addEventListener('click', () => { const i = $('file-input'); i.value = ''; i.click(); });
+$('file-input').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) loadFile(f); });
+const drop = document.querySelector('.pane.left');
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+drop.addEventListener('dragleave', e => { if (e.target === drop) drop.classList.remove('drag'); });
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) loadFile(f); });
+window.LV_loadFile = loadFile;   // for headless tests
+$('btn-example').addEventListener('click', () => {
+  $('input').value = JSON.stringify({
+    format: 'localoffice/v1', type: 'doc',
+    meta: { id: '3f2a…', title: 'Design note', created: '2026-01-01T00:00:00.000Z', modified: '2026-01-02T09:30:00.000Z', app: 'localdoc@1.0', tags: ['design'] },
+    body: { docMode: 'prose', blocks: [{ id: 'b1', heading: 'Overview', text: 'Hello.', required: [] }] }
+  }, null, 2);
+  run();
+});
+let tmr = null;
+$('input').addEventListener('input', () => { clearTimeout(tmr); tmr = setTimeout(run, 250); });
+// expose for headless tests
+window.LV = { validate: validate };
+
+// ── Hub embed protocol ────────────────────────────────────────────────
+// localValidate is a read-only utility: when the Hub hands it a file, drop the
+// text in and validate. It never authors or saves, so there is no Save delegation.
+if (window.parent !== window) {
+  window.addEventListener('message', e => {
+    const m = e.data; if (!m || m.proto !== 'localoffice') return;
+    if (m.type === 'open') {
+      try {
+        $('input').value = String(m.text == null ? '' : m.text);
+        if (m.name) $('hint').textContent = m.name;
+        run();
+        window.parent.postMessage({ proto: 'localoffice', type: 'opened', ok: true }, '*');
+      } catch (err) {
+        window.parent.postMessage({ proto: 'localoffice', type: 'opened', ok: false, error: String(err && err.message || err) }, '*');
+      }
+    }
+  });
+  window.parent.postMessage({ proto: 'localoffice', type: 'ready' }, '*');
+}
+</script>
+</body>
+</html>

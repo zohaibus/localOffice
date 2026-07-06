@@ -1307,6 +1307,9 @@ wellness: daily journaling (priority)</pre>
     <button onclick="openPlan()">Open</button>
     <button class="primary" onclick="savePlan()" title="Save (Ctrl+S)">Save</button>
     <button onclick="savePlanAs()">Save As</button>
+    <button onclick="importPlanCSVFile()" title="Import items from a CSV">Import CSV</button>
+    <button onclick="exportPlanCSV()" title="Export items as CSV">Export CSV</button>
+    <input type="file" id="csv-file" accept=".csv,text/csv" style="display:none">
     <button id="undo-btn" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↶</button>
     <button id="redo-btn" onclick="redo()" title="Redo (Ctrl+Y)" disabled>↷</button>
     <button onclick="printPlan()" title="Print or save as PDF">Print / PDF</button>
@@ -3113,6 +3116,55 @@ function hideImportModal() {
   document.getElementById('import-overlay').classList.remove('show');
 }
 
+// ── shared CSV adapter (inlined from src/csv.js) - RFC-4180 parse + serialize ──
+const LocalCSV = (function () {
+  function parse(text, opts) { opts = opts || {}; const delim = opts.delimiter || ','; text = String(text == null ? '' : text); if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); const rows = []; let row = [], field = '', inQuotes = false, sawField = false; const n = text.length; for (let i = 0; i < n; i++) { const c = text[i]; if (inQuotes) { if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; } else field += c; continue; } if (c === '"') { inQuotes = true; sawField = true; continue; } if (c === delim) { row.push(field); field = ''; sawField = true; continue; } if (c === '\r') { if (text[i + 1] === '\n') i++; row.push(field); rows.push(row); row = []; field = ''; sawField = false; continue; } if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; sawField = false; continue; } field += c; sawField = true; } if (field !== '' || row.length || sawField) { row.push(field); rows.push(row); } return rows; }
+  const nq = (s, d) => s.indexOf(d) >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0;
+  function serialize(rows, opts) { opts = opts || {}; const delim = opts.delimiter || ',', eol = opts.eol || '\r\n'; return (rows || []).map(r => (r || []).map(f => { f = f == null ? '' : String(f); return nq(f, delim) ? '"' + f.replace(/"/g, '""') + '"' : f; }).join(delim)).join(eol); }
+  return { parse, serialize };
+})();
+// plan -> CSV (Track, Section, Item, Priority, Done)
+function planToCSV() {
+  const rows = [['Track', 'Section', 'Item', 'Priority', 'Done']];
+  (data && data.tracks || []).forEach(t => (t.sections || []).forEach(s => (s.items || []).forEach(it => rows.push([t.title || '', s.name || '', it.text || '', it.priority ? 'yes' : '', it.done ? 'yes' : '']))));
+  return LocalCSV.serialize(rows, { eol: '\n' });
+}
+// CSV -> items merged into the plan (find/create Track then Section). Returns the count added.
+function planImportCSV(text) {
+  const rows = LocalCSV.parse(text); if (!rows.length || !data) return 0;
+  const h = rows[0].map(s => String(s).trim().toLowerCase());
+  const start = (h.indexOf('item') !== -1 || h.indexOf('task') !== -1 || (h.indexOf('track') !== -1 && h.indexOf('section') !== -1)) ? 1 : 0;
+  if (!Array.isArray(data.tracks)) data.tracks = [];
+  let added = 0;
+  for (let i = start; i < rows.length; i++) {
+    const r = rows[i]; let track, section, item, pri, done;
+    if (r.length >= 3) { track = (r[0] || '').trim(); section = (r[1] || '').trim(); item = (r[2] || '').trim(); pri = r[3] || ''; done = r[4] || ''; }
+    else { track = 'Imported'; section = 'Now'; item = (r[r.length - 1] || '').trim(); pri = ''; done = ''; }
+    if (!item) continue;
+    track = track || 'Imported'; section = section || 'Now';
+    let T = data.tracks.find(t => t.title === track);
+    if (!T) { T = { id: uid('t'), icon: '•', title: track, open: true, sections: [] }; data.tracks.push(T); }
+    let S = T.sections.find(s => s.name === section);
+    if (!S) { S = { name: section, horizon: 'now', items: [] }; T.sections.push(S); }
+    const it = { id: uid('i'), text: item };
+    if (/^(y|yes|true|1|\*)$/i.test(String(pri).trim())) it.priority = true;
+    if (/^(y|yes|true|1|x|done)$/i.test(String(done).trim())) it.done = true;
+    S.items.push(it); added++;
+  }
+  return added;
+}
+function exportPlanCSV() {
+  const name = (data && data.planTitle ? data.planTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'plan').replace(/^-+|-+$/g, '') || 'plan';
+  const blob = new Blob([planToCSV()], { type: 'text/csv' }), url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = name + '.csv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+function importPlanCSVFile() { const inp = document.getElementById('csv-file'); if (inp) { inp.value = ''; inp.click(); } }
+(function () {
+  const inp = document.getElementById('csv-file');
+  if (inp) inp.addEventListener('change', async e => { const f = e.target.files && e.target.files[0]; if (!f) return; const n = planImportCSV(await f.text()); if (n) { if (typeof hideWelcome === 'function') hideWelcome(); saveData(); render(); } });
+})();
+
 function runImport() {
   const ta = document.getElementById('import-textarea');
   const res = document.getElementById('import-result');
@@ -3405,7 +3457,7 @@ const JsonPanel = (function () {
 })();
 JsonPanel.init({ getText: () => LocalOffice.stringify(planEnvelope()), applyText: (t) => applyOpenedPlan(LocalOffice.parse(t, { coerce: raw => (raw && Array.isArray(raw.tracks)) ? LocalOffice.createEnvelope('plan', { title: raw.planTitle || 'My Plan', app: 'localplan@1.0', body: raw }) : null }).envelope, fileHandle) });
 
-// ── shared static renderer (inlined from src/render.js) — draws any embedded object's body. ──
+// ── shared static renderer (inlined from src/render.js) - draws any embedded object's body. ──
 (function (factory) {
   const mod = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
@@ -3490,7 +3542,7 @@ JsonPanel.init({ getText: () => LocalOffice.stringify(planEnvelope()), applyText
   function runbook(body, opts) { const steps = (body.steps || []).slice(0, (opts && opts.maxRows) || 16); if (!steps.length) return card({ type: 'runbook', body: body }); let html = '<ul class="lo-r-list" style="list-style:none;margin:0;padding:0;font-size:.58em;line-height:1.5;text-align:left">'; steps.forEach(s => { const mark = s.kind === 'note' ? '\u2022' : ((s.done || (s.result && s.result.pass)) ? '\u2611' : '\u2610'); html += '<li style="display:flex;gap:.5em"><span>' + mark + '</span><span>' + esc(s.text || '') + '</span></li>'; }); return html + '</ul>'; }
   function doc(body, opts) { const blocks = (body.blocks || []).slice(0, (opts && opts.maxRows) || 12); if (!blocks.length) return card({ type: 'doc', body: body }); let html = '<div class="lo-r-doc" style="font-size:.55em;line-height:1.4;text-align:left">'; blocks.forEach(b => { if (b.heading) html += '<div style="font-weight:700;margin:.4em 0 .12em">' + esc(b.heading) + '</div>'; if (b.text) html += '<div style="opacity:.85">' + esc(String(b.text).replace(/[#>*`_]/g, '').slice(0, 220)) + '</div>'; }); return html + '</div>'; }
   function plan(body, opts) { const tracks = (body.tracks || []).slice(0, (opts && opts.maxRows) || 6); if (!tracks.length) return card({ type: 'plan', body: body }); let html = '<div class="lo-r-plan" style="font-size:.55em;line-height:1.4;text-align:left">'; tracks.forEach(t => { html += '<div style="font-weight:700;margin-top:.3em">' + esc(t.title || '') + '</div>'; (t.sections || []).slice(0, 3).forEach(sec => { const items = (sec.items || []).slice(0, 4).map(i => esc(i.text || '')).filter(Boolean).join(', '); html += '<div style="opacity:.8">' + esc(sec.name || '') + (items ? ': ' + items : '') + '</div>'; }); }); return html + '</div>'; }
-  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> \u2014 ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
+  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> - ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
   function slides(body, opts) { const ss = body.slides || []; if (!ss.length) return card({ type: 'slides', body: body }); let html = '<div class="lo-r-slides" style="font-size:.55em;line-height:1.5;text-align:left">'; ss.slice(0, (opts && opts.maxRows) || 10).forEach((s, i) => { const tb = (s.blocks || []).find(b => b.role === 'title' || b.type === 'text'); const t = (tb && tb.content) || ('Slide ' + (i + 1)); html += '<div>' + (i + 1) + '. ' + esc(t) + '</div>'; }); return html + '</div>'; }
   function render(env, opts) { env = env || {}; const body = env.body || {}; switch (env.type) { case 'sheet': return sheet(body, opts); case 'mindmap': return mindmap(body, opts); case 'runbook': return runbook(body, opts); case 'doc': return doc(body, opts); case 'plan': return plan(body, opts); case 'flashcards': return flashcards(body, opts); case 'slides': return slides(body, opts); default: return card(env); } }
   return { render, card, summary, titleOf, mindmapSVG, LABELS };
@@ -3548,7 +3600,7 @@ const EmbedHost = (function () {
   function removeEmbed(id) { if (curEdit && curEdit.id === id) closeEditor(); write(read().filter(e => e.id !== id)); render(); }
   function render() {
     const list = read(); listEl.innerHTML = '';
-    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool \u2014 it is drawn here and saved inside this file.</p>'; return; }
+    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool - it is drawn here and saved inside this file.</p>'; return; }
     list.forEach(item => {
       const env = item.envelope || {}; const type = env.type; const tool = TOOLS[type];
       const title = (env.meta && env.meta.title) || (tool ? tool.label : type) || 'object';

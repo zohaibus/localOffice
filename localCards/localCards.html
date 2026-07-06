@@ -171,7 +171,11 @@
   <button id="btn-save" class="primary">Save</button>
   <button id="btn-saveas" class="ghost">Save As</button>
   <button id="btn-import" class="ghost">Import</button>
+  <button id="btn-import-csv" class="ghost">Import CSV</button>
   <button id="btn-export" class="ghost">Export TSV</button>
+  <button id="btn-export-csv" class="ghost">Export CSV</button>
+  <input type="file" id="csv-file" accept=".csv,text/csv" style="display:none">
+
   <button id="btn-stats" class="ghost">Stats</button>
   <button id="btn-ai" class="ghost" title="Local AI - optional, needs Ollama. Writes cards; never grades.">✦ AI</button>
   <span class="spacer"></span>
@@ -811,6 +815,37 @@ async function mergeDeckFile() {
 function deckToTSV() {
   return cards().map(c => [String(c.front).replace(/[\t\n]/g, ' '), String(c.back).replace(/[\t\n]/g, ' '), (c.tags || []).join(';')].join('\t')).join('\n');
 }
+// ── shared CSV adapter (inlined from src/csv.js) - RFC-4180 parse + serialize ──
+const LocalCSV = (function () {
+  function parse(text, opts) { opts = opts || {}; const delim = opts.delimiter || ','; text = String(text == null ? '' : text); if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); const rows = []; let row = [], field = '', inQuotes = false, sawField = false; const n = text.length; for (let i = 0; i < n; i++) { const c = text[i]; if (inQuotes) { if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; } else field += c; continue; } if (c === '"') { inQuotes = true; sawField = true; continue; } if (c === delim) { row.push(field); field = ''; sawField = true; continue; } if (c === '\r') { if (text[i + 1] === '\n') i++; row.push(field); rows.push(row); row = []; field = ''; sawField = false; continue; } if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; sawField = false; continue; } field += c; sawField = true; } if (field !== '' || row.length || sawField) { row.push(field); rows.push(row); } return rows; }
+  const nq = (s, d) => s.indexOf(d) >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0;
+  function serialize(rows, opts) { opts = opts || {}; const delim = opts.delimiter || ',', eol = opts.eol || '\r\n'; return (rows || []).map(r => (r || []).map(f => { f = f == null ? '' : String(f); return nq(f, delim) ? '"' + f.replace(/"/g, '""') + '"' : f; }).join(delim)).join(eol); }
+  return { parse, serialize };
+})();
+// cards -> CSV (Front, Back, Tags) with a header row; properly quotes commas/quotes/newlines
+function deckToCSV() {
+  return LocalCSV.serialize([['Front', 'Back', 'Tags']].concat(cards().map(c => [String(c.front || ''), String(c.back || ''), (c.tags || []).join(';')])), { eol: '\n' });
+}
+// CSV -> cards; skips a Front/Back header row if present; tags split on ; or |
+function cardsFromCSV(text) {
+  const rows = LocalCSV.parse(text); if (!rows.length) return [];
+  const h = rows[0].map(s => String(s).trim().toLowerCase());
+  const start = (h.indexOf('front') !== -1 && h.indexOf('back') !== -1) ? 1 : 0;
+  const out = [];
+  for (let i = start; i < rows.length; i++) {
+    const r = rows[i]; const front = (r[0] || '').trim(), back = (r[1] || '').trim();
+    const tags = (r[2] || '').split(/[;|]/).map(s => s.trim()).filter(Boolean);
+    if (front || back) out.push(freshCard(front, back, tags));
+  }
+  return out;
+}
+function exportCSV() {
+  if (!cards().length) { setStatus('No cards to export.'); return; }
+  const blob = new Blob([deckToCSV()], { type: 'text/csv' }), url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = (LocalOffice.slugify(deck.body.deck.name) || 'deck') + '.csv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 0);
+  setStatus('Exported ' + cards().length + ' cards as CSV.');
+}
 function exportTSV() {
   if (!cards().length) { setStatus('No cards to export.'); return; }
   const blob = new Blob([deckToTSV()], { type: 'text/tab-separated-values' }), url = URL.createObjectURL(blob);
@@ -956,6 +991,15 @@ $('tab-review').onclick = () => switchView('review');
 $('tag-filter').onchange = (e) => { tagFilter = e.target.value; renderList(); };
 $('deck-name').addEventListener('input', e => { deck.body.deck.name = e.target.value; markDirty(); });
 $('btn-export').onclick = exportTSV;
+$('btn-export-csv').onclick = exportCSV;
+$('btn-import-csv').onclick = () => { const inp = $('csv-file'); inp.value = ''; inp.click(); };
+$('csv-file').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  const newCards = cardsFromCSV(await f.text());
+  if (!newCards.length) { setStatus('No cards found in that CSV.'); return; }
+  newCards.forEach(c => cards().push(c)); markDirty(); renderAll();
+  setStatus('Imported ' + newCards.length + ' cards from CSV.');
+});
 $('btn-stats').onclick = openStats;
 $('stats-close').onclick = closeStats;
 $('stats-modal').addEventListener('click', e => { if (e.target === $('stats-modal')) closeStats(); });
@@ -1206,7 +1250,7 @@ const JsonPanel = (function () {
 })();
 JsonPanel.init({ getText: () => LocalOffice.stringify(deck), applyText: (t) => applyOpenedCards(LocalOffice.parse(t).envelope, handle) });
 
-// ── shared static renderer (inlined from src/render.js) — draws any embedded object's body. ──
+// ── shared static renderer (inlined from src/render.js) - draws any embedded object's body. ──
 (function (factory) {
   const mod = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
@@ -1291,7 +1335,7 @@ JsonPanel.init({ getText: () => LocalOffice.stringify(deck), applyText: (t) => a
   function runbook(body, opts) { const steps = (body.steps || []).slice(0, (opts && opts.maxRows) || 16); if (!steps.length) return card({ type: 'runbook', body: body }); let html = '<ul class="lo-r-list" style="list-style:none;margin:0;padding:0;font-size:.58em;line-height:1.5;text-align:left">'; steps.forEach(s => { const mark = s.kind === 'note' ? '\u2022' : ((s.done || (s.result && s.result.pass)) ? '\u2611' : '\u2610'); html += '<li style="display:flex;gap:.5em"><span>' + mark + '</span><span>' + esc(s.text || '') + '</span></li>'; }); return html + '</ul>'; }
   function doc(body, opts) { const blocks = (body.blocks || []).slice(0, (opts && opts.maxRows) || 12); if (!blocks.length) return card({ type: 'doc', body: body }); let html = '<div class="lo-r-doc" style="font-size:.55em;line-height:1.4;text-align:left">'; blocks.forEach(b => { if (b.heading) html += '<div style="font-weight:700;margin:.4em 0 .12em">' + esc(b.heading) + '</div>'; if (b.text) html += '<div style="opacity:.85">' + esc(String(b.text).replace(/[#>*`_]/g, '').slice(0, 220)) + '</div>'; }); return html + '</div>'; }
   function plan(body, opts) { const tracks = (body.tracks || []).slice(0, (opts && opts.maxRows) || 6); if (!tracks.length) return card({ type: 'plan', body: body }); let html = '<div class="lo-r-plan" style="font-size:.55em;line-height:1.4;text-align:left">'; tracks.forEach(t => { html += '<div style="font-weight:700;margin-top:.3em">' + esc(t.title || '') + '</div>'; (t.sections || []).slice(0, 3).forEach(sec => { const items = (sec.items || []).slice(0, 4).map(i => esc(i.text || '')).filter(Boolean).join(', '); html += '<div style="opacity:.8">' + esc(sec.name || '') + (items ? ': ' + items : '') + '</div>'; }); }); return html + '</div>'; }
-  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> \u2014 ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
+  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> - ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
   function slides(body, opts) { const ss = body.slides || []; if (!ss.length) return card({ type: 'slides', body: body }); let html = '<div class="lo-r-slides" style="font-size:.55em;line-height:1.5;text-align:left">'; ss.slice(0, (opts && opts.maxRows) || 10).forEach((s, i) => { const tb = (s.blocks || []).find(b => b.role === 'title' || b.type === 'text'); const t = (tb && tb.content) || ('Slide ' + (i + 1)); html += '<div>' + (i + 1) + '. ' + esc(t) + '</div>'; }); return html + '</div>'; }
   function render(env, opts) { env = env || {}; const body = env.body || {}; switch (env.type) { case 'sheet': return sheet(body, opts); case 'mindmap': return mindmap(body, opts); case 'runbook': return runbook(body, opts); case 'doc': return doc(body, opts); case 'plan': return plan(body, opts); case 'flashcards': return flashcards(body, opts); case 'slides': return slides(body, opts); default: return card(env); } }
   return { render, card, summary, titleOf, mindmapSVG, LABELS };
@@ -1349,7 +1393,7 @@ const EmbedHost = (function () {
   function removeEmbed(id) { if (curEdit && curEdit.id === id) closeEditor(); write(read().filter(e => e.id !== id)); render(); }
   function render() {
     const list = read(); listEl.innerHTML = '';
-    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool \u2014 it is drawn here and saved inside this file.</p>'; return; }
+    if (!list.length) { listEl.innerHTML = '<p class="eh-empty">No embedded objects yet. Use <b>+ Add</b> to attach a live object from another tool - it is drawn here and saved inside this file.</p>'; return; }
     list.forEach(item => {
       const env = item.envelope || {}; const type = env.type; const tool = TOOLS[type];
       const title = (env.meta && env.meta.title) || (tool ? tool.label : type) || 'object';

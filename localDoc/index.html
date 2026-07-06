@@ -364,7 +364,7 @@ function canExport() { return lintReport().pass; }
 function toMarkdown() {
   let s = '# ' + (title || 'Untitled') + '\n';
   data.blocks.forEach(b => {
-    if (b.embed) { const env = b.embed.envelope || {}; const tl = (env.meta && env.meta.title) || env.type || 'object'; s += '\n## ' + tl + '\n\n> Embedded ' + (env.type || 'object') + ' — see the ' + (LocalOffice.FILE_EXT || '.localoffice.json') + ' file for the live data.\n'; return; }
+    if (b.embed) { const env = b.embed.envelope || {}; const tl = (env.meta && env.meta.title) || env.type || 'object'; s += '\n## ' + tl + '\n\n> Embedded ' + (env.type || 'object') + ' - see the ' + (LocalOffice.FILE_EXT || '.localoffice.json') + ' file for the live data.\n'; return; }
     s += '\n## ' + (b.heading || '') + '\n\n' + (b.text || '') + '\n';
   });
   return s.trim() + '\n';
@@ -589,7 +589,7 @@ function byId(id) { return data.blocks.find(b => b.id === id); }
 // The nested localoffice/v1 envelope lives inside this doc's body (block.embed.envelope),
 // so it round-trips through save/load even for tools that can't render it. Live edits in the
 // child are pushed back here (embedState) and cached; on any host serialize the latest is kept.
-// ── shared static renderer (inlined from src/render.js) — draws any embedded
+// ── shared static renderer (inlined from src/render.js) - draws any embedded
 //    object's body as self-contained HTML/SVG for the inline view + export. ──
 (function (factory) {
   const mod = factory();
@@ -675,7 +675,7 @@ function byId(id) { return data.blocks.find(b => b.id === id); }
   function runbook(body, opts) { const steps = (body.steps || []).slice(0, (opts && opts.maxRows) || 16); if (!steps.length) return card({ type: 'runbook', body: body }); let html = '<ul class="lo-r-list" style="list-style:none;margin:0;padding:0;font-size:.58em;line-height:1.5;text-align:left">'; steps.forEach(s => { const mark = s.kind === 'note' ? '•' : ((s.done || (s.result && s.result.pass)) ? '☑' : '☐'); html += '<li style="display:flex;gap:.5em"><span>' + mark + '</span><span>' + esc(s.text || '') + '</span></li>'; }); return html + '</ul>'; }
   function doc(body, opts) { const blocks = (body.blocks || []).slice(0, (opts && opts.maxRows) || 12); if (!blocks.length) return card({ type: 'doc', body: body }); let html = '<div class="lo-r-doc" style="font-size:.55em;line-height:1.4;text-align:left">'; blocks.forEach(b => { if (b.heading) html += '<div style="font-weight:700;margin:.4em 0 .12em">' + esc(b.heading) + '</div>'; if (b.text) html += '<div style="opacity:.85">' + esc(String(b.text).replace(/[#>*`_]/g, '').slice(0, 220)) + '</div>'; }); return html + '</div>'; }
   function plan(body, opts) { const tracks = (body.tracks || []).slice(0, (opts && opts.maxRows) || 6); if (!tracks.length) return card({ type: 'plan', body: body }); let html = '<div class="lo-r-plan" style="font-size:.55em;line-height:1.4;text-align:left">'; tracks.forEach(t => { html += '<div style="font-weight:700;margin-top:.3em">' + esc(t.title || '') + '</div>'; (t.sections || []).slice(0, 3).forEach(sec => { const items = (sec.items || []).slice(0, 4).map(i => esc(i.text || '')).filter(Boolean).join(', '); html += '<div style="opacity:.8">' + esc(sec.name || '') + (items ? ': ' + items : '') + '</div>'; }); }); return html + '</div>'; }
-  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> — ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
+  function flashcards(body, opts) { const cs = (body.cards || []).slice(0, (opts && opts.maxRows) || 10); if (!cs.length) return card({ type: 'flashcards', body: body }); let html = '<div class="lo-r-cards" style="font-size:.55em;line-height:1.5;text-align:left">'; cs.forEach(c => { html += '<div><b>' + esc(c.front || '') + '</b> - ' + esc(c.back || '') + '</div>'; }); return html + '</div>'; }
   function slides(body, opts) { const ss = body.slides || []; if (!ss.length) return card({ type: 'slides', body: body }); let html = '<div class="lo-r-slides" style="font-size:.55em;line-height:1.5;text-align:left">'; ss.slice(0, (opts && opts.maxRows) || 10).forEach((s, i) => { const tb = (s.blocks || []).find(b => b.role === 'title' || b.type === 'text'); const t = (tb && tb.content) || ('Slide ' + (i + 1)); html += '<div>' + (i + 1) + '. ' + esc(t) + '</div>'; }); return html + '</div>'; }
   function render(env, opts) { env = env || {}; const body = env.body || {}; switch (env.type) { case 'sheet': return sheet(body, opts); case 'mindmap': return mindmap(body, opts); case 'runbook': return runbook(body, opts); case 'doc': return doc(body, opts); case 'plan': return plan(body, opts); case 'flashcards': return flashcards(body, opts); case 'slides': return slides(body, opts); default: return card(env); } }
   return { render, card, summary, titleOf, mindmapSVG, LABELS };
@@ -723,7 +723,7 @@ function makeEmbedBlock(b) {
     '<span class="ops"><button class="fsm" title="Smaller">A−</button><button class="fsp" title="Larger">A+</button>' + (tool ? '<button class="edit" title="Edit this object">Edit ◲</button>' : '') +
     '<button class="up" title="Move up">↑</button><button class="down" title="Move down">↓</button><button class="rm" title="Remove">✕</button></span></div>' +
     '<div class="embed-render" style="font-size:' + (26 * scale).toFixed(1) + 'px"' + (tool ? ' title="Double-click to edit"' : '') + '>' + LocalRender.render(env) + '</div>' +
-    (tool ? '' : '<div class="embed-ph">Its editor isn\'t available here, but the data is preserved on save — open the file in its own tool to edit.</div>');
+    (tool ? '' : '<div class="embed-ph">Its editor isn\'t available here, but the data is preserved on save - open the file in its own tool to edit.</div>');
   el.querySelector('.rm').addEventListener('click', () => removeBlock(b.id));
   el.querySelector('.up').addEventListener('click', () => moveBlock(b.id, -1));
   el.querySelector('.down').addEventListener('click', () => moveBlock(b.id, 1));
@@ -1085,8 +1085,8 @@ Rules:
 Format example - this shows the SHAPE only; write your own wording, do not copy this text:
 { "id": "mit", "heading": "Mitigation", "text": "<your own sentence that actually contains the words patch and deploy>", "required": ["patch", "deploy"] }
 
-Embedding an object (use when a section is best shown as another tool's object — a real data
-table, a diagram, or a finite-state machine — instead of prose):
+Embedding an object (use when a section is best shown as another tool's object - a real data
+table, a diagram, or a finite-state machine - instead of prose):
 - Instead of the normal fields, a block may be an embedded object:
   { "id": "<id>", "embed": { "envelope": {
     "format": "localoffice/v1", "type": "<sheet|mindmap|runbook|plan|flashcards>",

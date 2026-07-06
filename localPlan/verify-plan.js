@@ -373,6 +373,24 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
     return added && noDrawerIframe && previewShown && modalOpen && cached && rt && hasBtn;
   }));
 
+  // ── CSV import/export (shared LocalCSV) ──
+  check('localPlan inlines the shared LocalCSV adapter', await page.evaluate(() => typeof LocalCSV === 'object' && typeof LocalCSV.parse === 'function' && typeof LocalCSV.serialize === 'function'));
+  check('plan CSV import creates tracks/sections/items (commas, priority, done)', await page.evaluate(() => {
+    data = { planTitle: 'P', tracks: [] };
+    const n = planImportCSV('Track,Section,Item,Priority,Done\nWork,Now,"Ship, then test",yes,\nWork,Now,Cleanup,,x\nHome,Later,Groceries,,');
+    const work = data.tracks.find(t => t.title === 'Work'); const now = work && work.sections.find(s => s.name === 'Now');
+    return n === 3 && now && now.items.length === 2 && now.items[0].text === 'Ship, then test' && now.items[0].priority === true && now.items[1].done === true && data.tracks.some(t => t.title === 'Home');
+  }));
+  check('plan CSV export round-trips exactly (quotes a comma-bearing item)', await page.evaluate(() => {
+    data = { planTitle: 'P', tracks: [] };
+    planImportCSV('Work,Now,"Ship, then test",yes,\nWork,Now,Cleanup,,x');
+    const csv = planToCSV();
+    data = { planTitle: 'P', tracks: [] };
+    const n = planImportCSV(csv);
+    const now = data.tracks[0].sections[0];
+    return n === 2 && csv.indexOf('"Ship, then test"') >= 0 && now.items[0].text === 'Ship, then test' && now.items[0].priority === true && now.items[1].done === true;
+  }));
+
   console.log(`\n\n${pass} passed, ${fail} failed`);
   if (fails.length) { console.log('Failures:'); fails.forEach(f => console.log('  ✗ ' + f)); }
   await browser.close();

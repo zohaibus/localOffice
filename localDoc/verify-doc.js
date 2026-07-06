@@ -48,7 +48,7 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
 
   // ── adversarial: the gate must not be beatable by word-salad substrings ──
   const adv = await page.evaluate(() => {
-    // "dispatched" contains "patch", "redeployed" contains "deployed" — these
+    // "dispatched" contains "patch", "redeployed" contains "deployed" - these
     // are NOT the required words and must NOT satisfy the gate.
     data = { blocks: [{ id: 'm', heading: 'Mitigation', text: 'we dispatched a tech who redeployed the rack', required: ['patch', 'deployed'] }] };
     const salad = { open: canExport(), missed: lintReport().rows[0].missed };

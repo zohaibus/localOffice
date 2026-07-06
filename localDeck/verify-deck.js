@@ -507,6 +507,18 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
     return html.indexOf('<table') >= 0 && html.indexOf('Item') >= 0 && html.indexOf('Bolt') >= 0 && html.indexOf('>12<') >= 0 && exp.indexOf('<table') >= 0;
   }));
   check('localDeck: uses the shared LocalRender module', await page.evaluate(() => typeof LocalRender === 'object' && typeof LocalRender.render === 'function'));
+  check('localDeck: "double-click to edit" hint is never in the block HTML (present/export safe)', await page.evaluate(() => {
+    deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
+    const blk = s.blocks.find(b => b.type === 'embed'); blk.embed = { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'T' }, body: { sheets: [{ cells: { A1: { v: 'x' } } }] } } };
+    return blockHTML(blk, theme(), {}).indexOf('double-click') < 0 && blockHTML(blk, theme(), { export: true }).indexOf('double-click') < 0;
+  }));
+  check('localDeck: the edit hint IS shown in the editor stage (#preview, via CSS only)', await page.evaluate(() => {
+    deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
+    const blk = s.blocks.find(b => b.type === 'embed'); blk.embed = { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'T' }, body: { sheets: [{ cells: { A1: { v: 'x' } } }] } } };
+    renderAll();
+    const t = document.querySelector('#preview .t-embed'); if (!t) return false;
+    return String(getComputedStyle(t, '::after').content || '').indexOf('double-click') >= 0;
+  }));
   check('localDeck: A+/A− scales an embedded object\'s font size', await page.evaluate(() => {
     deck.body.slides = [blankSlide('embed')]; cur = 0; const s = deck.body.slides[0]; syncBlocks(s);
     const blk = s.blocks.find(b => b.type === 'embed'); blk.embed = { envelope: { format: 'localoffice/v1', type: 'sheet', meta: { title: 'T' }, body: { sheets: [{ cells: { A1: { v: 'x' } } }] } }, scale: 1.6 };

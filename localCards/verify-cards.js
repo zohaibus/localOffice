@@ -516,6 +516,23 @@ function check(name, cond) { if (cond) { pass++; process.stdout.write('.'); } el
     return added && noDrawerIframe && previewShown && modalOpen && cached && rt && hasBtn;
   }));
 
+  // ── CSV import/export (shared LocalCSV) ──
+  check('localCards inlines the shared LocalCSV adapter', await page.evaluate(() => typeof LocalCSV === 'object' && typeof LocalCSV.parse === 'function' && typeof LocalCSV.serialize === 'function'));
+  check('CSV export/import round-trips cards (commas, quotes, newlines, tags)', await page.evaluate(() => {
+    deck.body.cards = [
+      { id: 'c1', front: 'What, exactly?', back: 'A "quoted" answer', tags: ['tag1', 'tag2'], srs: freshSrs() },
+      { id: 'c2', front: 'Second', back: 'line1\nline2', tags: [], srs: freshSrs() }
+    ];
+    const csv = deckToCSV(); const back = cardsFromCSV(csv);
+    return csv.indexOf('"What, exactly?"') >= 0 && back.length === 2 &&
+      back[0].front === 'What, exactly?' && back[0].back === 'A "quoted" answer' && back[0].tags.join(';') === 'tag1;tag2' &&
+      back[1].back === 'line1\nline2';
+  }));
+  check('CSV import skips a Front/Back header row', await page.evaluate(() => {
+    const c = cardsFromCSV('Front,Back,Tags\nQ,A,x');
+    return c.length === 1 && c[0].front === 'Q' && c[0].back === 'A' && c[0].tags[0] === 'x';
+  }));
+
   console.log(`\n\n${pass} passed, ${fail} failed`);
   if (fails.length) { console.log('Failures:'); fails.forEach(f => console.log('  ✗ ' + f)); }
   await browser.close();

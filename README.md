@@ -4,9 +4,9 @@ Single-file, local-first office tools: fully offline, zero dependencies, built o
 one rule: **AI advises, deterministic math decides.**
 
 <p align="center">
-  <a href="https://zohaibus.github.io/localOffice/LocalOffice.html"><img src="https://github.com/user-attachments/assets/373d110c-cdf6-454f-96c1-0a61252394ef" alt="LocalOffice Hub demo (animated)" width="860"></a>
+  <a href="https://localoffice.dev/LocalOffice.html"><img src="https://github.com/user-attachments/assets/373d110c-cdf6-454f-96c1-0a61252394ef" alt="LocalOffice Hub demo (animated)" width="860"></a>
 </p>
-<p align="center"><a href="https://zohaibus.github.io/localOffice/LocalOffice.html"><b>▶ Open the Hub</b></a></p>
+<p align="center"><a href="https://localoffice.dev/LocalOffice.html"><b>▶ Open the Hub</b></a></p>
 
 A family of tools that all read and write one JSON format (`localoffice/v1`); the
 shared core is built once, and each tool is a thin layer on top. Every tool has a
@@ -27,6 +27,8 @@ src/verify.js            Shared verification kernel (deterministic exact + cover
 src/test-verify.js       Node unit tests for the verify kernel.
 src/render.js            Shared static renderer (LocalRender): any object → HTML/SVG for embeds + export.
 src/test-render.js       Node unit tests for the render module.
+src/csv.js               Shared RFC-4180 CSV adapter (LocalCSV): parse + serialize, inlined per tool.
+src/test-csv.js          Node unit tests for the CSV adapter.
 core-harness.html        Browser dev harness for the IO paths Node can't test.
 run-all-tests.js         Runs every suite across the whole project.
 fs-mock.js               In-memory File System Access API mock for headless save/open tests.
@@ -41,22 +43,28 @@ localMindMap/            Mindmap (body type: mindmap). Single-file canvas plus h
 localMark/               Image sanitizer (body type: image). Scrub/redact/annotate plus headless tests.
 localCheck/              QA runbook (body type: runbook). Kernel-gated sign-off plus headless tests.
 localDoc/                Block doc writer (body type: doc). Coverage compliance linter plus headless tests.
+localValidate/           Spec conformance checker: paste an envelope, get pass/fail + which rule failed.
 templates/               localoffice/v1 sheet and plan presets (unit pack, net-worth, PM plan).
+SPEC.md                  The canonical localoffice/v1 envelope specification.
 ```
 
 ## Shared capabilities (across the tools)
 
-- **LLM authoring — `✦ Prompt`.** Every tool's JSON panel has a `✦ Prompt` toggle
+- **LLM authoring (`✦ Prompt`).** Every tool's JSON panel has a `✦ Prompt` toggle
   showing a copy-ready prompt to build that document with *any* LLM (local, on-prem,
   or cloud); paste the returned JSON back and Apply. The AI-panel tools also have a
   one-click **Generate** via a local Ollama. The deterministic kernel always decides
-  correctness — the model only proposes.
+  correctness; the model only proposes.
 - **Embedded objects.** A tool can embed another tool's object as a live, editable
-  child — a sheet's table or a mind map on a deck slide, an object inline in a doc,
+  child: a sheet's table or a mind map on a deck slide, an object inline in a doc,
   or attached via each tool's `◲ Embeds` drawer. Objects are stored as a nested
   `localoffice/v1` envelope (they round-trip on save/load) and drawn by the shared
   static renderer `src/render.js` (`LocalRender`), so they render the same in the
   editor **and** in exports, fully offline. You edit by opening the real tool.
+- **CSV import/export.** The tabular tools speak CSV through one shared,
+  RFC-4180-correct adapter (`src/csv.js`, `LocalCSV`): LocalSheets (cells), localCards
+  (Front/Back/Tags), and localPlan (Track/Section/Item). Commas, quotes, and embedded
+  newlines are handled in one tested place, so a round-trip never mangles data.
 - **Mind-map diagramming.** Node shapes (rounded, rectangle, circle, diamond,
   triangle, logic gates), a full colour palette (named + custom hex), and
   connections you can click to **label / style** (line, arrow, double-arrow, dashed)
@@ -380,13 +388,13 @@ numbers describe a *power class*, not a brand.
 
 Measured there with [`verify-perf.js`](verify-perf.js) (`node verify-perf.js`):
 
-- **~1,090 KB (≈1.06 MB) for the entire 9-file suite, 0 dependencies, 0 build
+- **~1,113 KB (≈1.09 MB) for the entire 10-file suite, 0 dependencies, 0 build
   step.** No framework, no DOM-diffing runtime, no bundler. The source *is* the
-  app. (The shared modules — core, verify kernel, and the `LocalRender` renderer —
-  are *inlined* into each tool rather than loaded, which keeps every file
-  standalone at the cost of some duplication.)
-- **Cold start (parse to interactive) of about 20 to 330 ms** for eight of the
-  nine tools on that CPU; the spreadsheet/formula engine, the heavy one, takes
+  app. (The shared modules (core, verify kernel, the `LocalRender` renderer, and
+  the `LocalCSV` adapter) are *inlined* into each tool rather than loaded, which
+  keeps every file standalone at the cost of some duplication.)
+- **Cold start (parse to interactive) of about 20 to 330 ms** for nine of the
+  ten tools on that CPU; the spreadsheet/formula engine, the heavy one, takes
   about 0.6 s. Roughly **10 MB JS heap** per tool (browser-reported, coarse).
 - **No idle work:** zero background polling, zero cloud sync, zero telemetry, zero
   DNS lookups. The only interval timers in the whole suite are sub-second

@@ -10,9 +10,9 @@
 No accounts. No cloud. No build step. No tracking. One HTML file.
 
 <p align="center">
-  <a href="https://zohaibus.github.io/localOffice/localDoc/index.html"><img src="https://github.com/user-attachments/assets/0b9eab42-628c-416e-8367-e44bc4523b6d" alt="localDoc demo (animated)" width="820"></a>
+  <a href="https://localoffice.dev/localDoc/index.html"><img src="https://github.com/user-attachments/assets/0b9eab42-628c-416e-8367-e44bc4523b6d" alt="localDoc demo (animated)" width="820"></a>
 </p>
-<p align="center"><a href="https://zohaibus.github.io/localOffice/localDoc/index.html"><b>▶ Open localDoc</b></a></p>
+<p align="center"><a href="https://localoffice.dev/localDoc/index.html"><b>▶ Open localDoc</b></a></p>
 
 ---
 

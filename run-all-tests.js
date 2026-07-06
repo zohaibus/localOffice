@@ -18,6 +18,7 @@ const SUITES = [
   { name: 'LocalOffice core (loader/saver)',  file: path.join(BUILD, 'src', 'test-core.js') },
   { name: 'LocalOffice verify kernel',        file: path.join(BUILD, 'src', 'test-verify.js') },
   { name: 'LocalOffice render module',        file: path.join(BUILD, 'src', 'test-render.js') },
+  { name: 'LocalOffice CSV adapter',          file: path.join(BUILD, 'src', 'test-csv.js') },
   { name: 'localDeck (headless browser)',     file: path.join(BUILD, 'localDeck', 'verify-deck.js') },
   { name: 'localCards (headless browser)',    file: path.join(BUILD, 'localCards', 'verify-cards.js') },
   { name: 'LocalSheets engine',               file: path.join(SHEETS, 'src', 'test-engine.js') },
@@ -30,6 +31,7 @@ const SUITES = [
   { name: 'localCheck (QA runbook)',          file: path.join(BUILD, 'localCheck', 'verify-check.js') },
   { name: 'localDoc (compliance writer)',     file: path.join(BUILD, 'localDoc', 'verify-doc.js') },
   { name: 'Templates (sheet/plan presets)',   file: path.join(BUILD, 'templates', 'verify-templates.js') },
+  { name: 'localValidate (spec conformance)', file: path.join(BUILD, 'localValidate', 'verify-validate.js') },
 ];
 
 function summarize(out) {
